@@ -35,6 +35,7 @@ const DragDropSlideList = ({
               <Draggable key={slide.id} draggableId={slide.id} index={index}>
                 {(provided, snapshot) => (
                   <motion.div
+                    key={slide.id} 
                     ref={provided.innerRef}
                     {...provided.draggableProps}
                     initial={{ opacity: 0, y: 10 }}

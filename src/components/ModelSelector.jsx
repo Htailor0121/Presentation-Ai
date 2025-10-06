@@ -115,7 +115,7 @@ const ModelSelector = ({
               Popular Models
             </div>
             {filteredModels.map((model) => (
-              <button
+              <button 
                 key={model.id}
                 onClick={() => {
                   onModelChange(model.id)

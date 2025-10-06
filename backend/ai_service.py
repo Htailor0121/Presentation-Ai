@@ -1,527 +1,406 @@
-"""
-AI Service for generating presentations using OpenRouter API
-"""
 import os
 import json
 import httpx
-from typing import List, Dict, Any
+import re
+from typing import Dict, Any, List
 from dotenv import load_dotenv
+from theme_manager import theme_manager
+from interactive_features import interactive_manager
+import matplotlib.pyplot as plt
+import io, base64
+from datetime import datetime
 
-# Safely load .env even if saved with BOM or odd encoding
-def _safe_load_env() -> None:
-    try:
-        load_dotenv(encoding="utf-8")
-        return
-    except Exception:
-        pass
-    try:
-        # Handle UTF-8 with BOM
-        load_dotenv(encoding="utf-8-sig")
-    except Exception:
-        # As a last resort, continue without .env; rely on real env vars
-        pass
+load_dotenv()
 
-_safe_load_env()
-
-class OpenRouterService:
+class AIHeavyPresentationService:
+    """
+    Maximizes AI usage - single comprehensive prompt generates everything
+    """
+    
     def __init__(self):
         self.api_key = os.getenv("OPENROUTER_API_KEY")
         self.base_url = "https://openrouter.ai/api/v1"
-        # Prefer env overrides; fall back to widely available free models
-        self.default_model = os.getenv("DEFAULT_AI_MODEL")
-        self.image_model = os.getenv("image_model")
+        self.default_model = os.getenv("DEFAULT_AI_MODEL", "mistralai/mistral-7b-instruct:free")
+        self.image_model = os.getenv("IMAGE_MODEL", "google/gemini-2.0-flash-exp:free")
         
         if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+            raise ValueError("OPENROUTER_API_KEY not found")
     
-    async def generate_presentation(self, prompt: str, model: str = None) -> Dict[str, Any]:
-        """Generate a presentation using OpenRouter API"""
-        model = model or self.default_model
+    async def generate_presentation(
+        self,
+        topic: str,
+        model: str = None,
+        theme_name: str = "modern",
+        include_interactive: bool = True,
+        num_slides: int = 8
+    ) -> Dict[str, Any]:
+        """
+        Generate complete presentation with ONE AI call
+        Compatible with existing API
+        """
         
-        system_prompt = """You are an expert presentation designer. Generate a professional presentation based on the user's prompt.
+        print(f"🎨 Generating presentation with AI-heavy approach...")
+        
+        # Step 1: Single comprehensive AI call
+        presentation_data = await self._generate_with_comprehensive_prompt(
+            topic, 
+            theme_name, 
+            num_slides,
+            model or self.default_model
+        )
+        
+        # Step 2: Only generate images and charts (technical tasks)
+        enhanced_slides = await self._add_media_assets(
+            presentation_data.get("slides", [])
+        )
+        
+        # Step 3: Apply theme and interactive features
+        theme = theme_manager.get_theme(theme_name)
+        final_slides = []
+        
+        for i, slide in enumerate(enhanced_slides):
+            slide = self._apply_theme_colors(slide, theme)
+            
+            if include_interactive:
+                slide = interactive_manager.enhance_slide_with_interactivity(slide)
+            
+            slide["id"] = slide.get("id") or f"slide_{i+1}_{int(datetime.now().timestamp() * 1000)}"
+            final_slides.append(slide)
+        
+        return {
+            "title": presentation_data.get("title", topic.title()),
+            "description": presentation_data.get("description", f"AI-generated presentation about {topic}"),
+            "theme": theme.name,
+            "themeData": self._get_theme_data(theme),
+            "slides": final_slides,
+            "metadata": {
+                "totalSlides": len(final_slides),
+                "hasInteractiveFeatures": include_interactive,
+                "hasCharts": any("chartUrl" in s for s in final_slides),
+                "hasImages": all("imageUrl" in s for s in final_slides),
+                "generatedAt": datetime.now().isoformat()
+            }
+        }
+    
+    async def _generate_with_comprehensive_prompt(
+        self,
+        topic: str,
+        theme: str,
+        num_slides: int,
+        model: str
+    ) -> Dict[str, Any]:
+        """ONE comprehensive prompt that asks AI to do EVERYTHING"""
+        
+        prompt = f"""Create a complete {num_slides}-slide presentation about: {topic}
 
-Return a JSON response with this exact structure:
-{
-  "title": "Presentation Title",
-  "description": "Brief description",
+YOU MUST:
+1. Design the entire presentation flow and structure
+2. Write detailed, engaging content for each slide
+3. Decide optimal slide types and layouts
+4. Create descriptive image prompts for AI image generation
+5. Identify slides that need data visualizations and specify chart data
+6. Ensure logical flow and narrative coherence
+
+RETURN ONLY THIS EXACT JSON STRUCTURE:
+{{
+  "title": "Engaging Presentation Title",
+  "description": "Brief compelling description",
   "slides": [
-    {
-      "type": "title",
-      "title": "Slide Title",
-      "content": "Slide content with bullet points or text",
-      "backgroundColor": "#3b82f6",
-      "textColor": "#ffffff",
-      "layout": "center",
-      "imagePrompt": "Description for AI image generation"
-    }
+    {{
+      "type": "title|content|comparison|timeline|data",
+      "title": "Compelling Slide Title",
+      "content": "Detailed, well-written content (3-5 bullet points or 2-3 paragraphs)",
+      "imagePrompt": "Detailed description for AI image generation (be specific: style, mood, elements, colors)",
+      "layout": "center|left|right|two-column|full-image",
+      "chartData": {{
+        "needed": true|false,
+        "type": "bar|pie|line|scatter",
+        "title": "Chart Title",
+        "labels": ["Label1", "Label2", "Label3"],
+        "values": [30, 45, 25],
+        "description": "What this data shows"
+      }}
+    }}
   ]
-}
+}}
 
-Slide types: title, content, image, chart, quote
-Layouts: center, left, right, two-column
-Use professional color schemes and ensure content is engaging and well-structured.
+GUIDELINES:
+- First slide MUST be an engaging title slide with type: "title"
+- Last slide should be conclusion/call-to-action
+- Vary slide types for engagement
+- Include 1-2 data visualization slides if topic involves numbers/trends
+- Image prompts should be detailed and specific
+- Keep content concise but meaningful
+- Ensure proper JSON formatting
 
-For image slides, include an "imagePrompt" field with a detailed description for AI image generation that matches the slide content."""
-
-        user_prompt = f"""Create a professional presentation about: {prompt}
-
-Make it engaging with:
-- A compelling title slide
-- 10 to 20 content slides with key points
-- Include different diffrent  image in all slides with relevant visuals
-- Use bullet points and clear structure
-- Include a conclusion slide
-- Use professional color schemes
-- Make content informative and well-organized
-- For image slides, provide detailed image prompts that match the content"""
+IMPORTANT: Return ONLY the JSON, no other text."""
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/chat/completions",
-                            headers={
+                    headers={
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                                "User-Agent": "PresentationAI/1.0",
-                        "HTTP-Referer": "http://localhost:3000",
-                        "X-Title": "Presentation AI"
+                        "Content-Type": "application/json"
                     },
                     json={
                         "model": model,
                         "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
+                            {
+                                "role": "system",
+                                "content": "You are an expert presentation designer. You create engaging, well-structured presentations with compelling content. You always return valid JSON."
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
                         ],
-                        "temperature": 0.7,
-                        "max_tokens": 2000
+                        "temperature": 0.8,
+                        "max_tokens": 8000
                     },
-                    timeout=30.0
+                    timeout=90
                 )
+            
+            if response.status_code != 200:
+                raise Exception(f"API error: {response.status_code}")
+            
+            content = response.json()["choices"][0]["message"]["content"]
+            
+            # Extract JSON
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
+            else:
+                raise Exception("No valid JSON in response")
                 
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                    except Exception as e:
-                        print(f"Text JSON parse error: {e}; body: {response.text}")
-                        return self._create_fallback_presentation(prompt)
-                    content = data["choices"][0]["message"]["content"]
-                    
-                    try:
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}') + 1
-                        if start_idx != -1 and end_idx != -1:
-                            json_content = content[start_idx:end_idx]
-                            presentation_data = json.loads(json_content)
-                            return presentation_data
-                        else:
-                            raise ValueError("No JSON found in response")
-                    except (json.JSONDecodeError, ValueError) as e:
-                        # Fallback to mock data if JSON parsing fails
-                        print(f"JSON parsing failed: {e}")
-                        return self._create_fallback_presentation(prompt)
-                else:
-                    print(f"OpenRouter API error: {response.status_code} - {response.text}")
-                    return self._create_fallback_presentation(prompt)
-                    
         except Exception as e:
-            print(f"Error calling OpenRouter API: {e}")
-            return self._create_fallback_presentation(prompt)
-    
-    def _create_fallback_presentation(self, prompt: str) -> Dict[str, Any]:
-        """Create a fallback presentation if AI service fails"""
-        title = self._extract_title_from_prompt(prompt)
+            print(f"❌ Error in comprehensive prompt: {e}")
+            return self._create_emergency_fallback(topic, num_slides)
         
-        return {
-            "title": title,
-            "description": prompt,
-            "theme": "modern",
-            "slides": [
-                {
-                    "type": "title",
-                    "title": title,
-                    "content": f"A presentation about {prompt.lower()}",
-                    "backgroundColor": "#3b82f6",
-                    "textColor": "#ffffff",
-                    "layout": "center"
-                },
-                {
-                    "type": "content",
-                    "title": "Introduction",
-                    "content": f"Welcome to our presentation about {prompt.lower()}.\n\nIn this presentation, we will explore the key concepts and important aspects of this topic.",
-                    "backgroundColor": "#ffffff",
-                    "textColor": "#1f2937",
-                    "layout": "left"
-                },
-                {
-                    "type": "content",
-                    "title": "Key Points",
-                    "content": "Here are the main points we'll cover:\n\n• Understanding the basics\n• Important considerations\n• Best practices\n• Future outlook",
-                    "backgroundColor": "#f8fafc",
-                    "textColor": "#1f2937",
-                    "layout": "left"
-                },
-                {
-                    "type": "content",
-                    "title": "Conclusion",
-                    "content": f"Thank you for your attention!\n\nWe hope this presentation has provided valuable insights about {prompt.lower()}.\n\nQuestions?",
-                    "backgroundColor": "#1f2937",
-                    "textColor": "#ffffff",
-                    "layout": "center"
-                }
-            ]
-        }
+    async def get_available_models(self) -> List[str]:
+        """Get available models from OpenRouter"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                    },
+                    timeout=10
+                )
+
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("data", [])
+                return [model["id"] for model in models if model.get("id")]
+            return []
+        except Exception as e:
+            print(f"Error fetching models from OpenRouter: {e}")
+            return []
     
-    def _extract_title_from_prompt(self, prompt: str) -> str:
-        """Extract a clean title from the prompt"""
-        words = prompt.split()
-        title = " ".join(word.capitalize() for word in words)
-        title = "".join(c for c in title if c.isalnum() or c.isspace()).strip()
-        return title[:50]
+    async def _add_media_assets(self, slides: List[Dict]) -> List[Dict]:
+        """Generate images and render charts"""
+        enhanced = []
+        
+        for i, slide in enumerate(slides):
+            print(f"  Processing slide {i+1}/{len(slides)}: {slide.get('title')}")
+            
+            # Generate image
+            if slide.get("imagePrompt"):
+                try:
+                    image_url = await self._generate_image(slide["imagePrompt"])
+                    slide["imageUrl"] = image_url
+                except Exception as e:
+                    print(f"    ⚠️ Image gen failed: {e}")
+                    slide["imageUrl"] = self._fallback_image()
+            
+            # Generate chart
+            chart_data = slide.get("chartData", {})
+            if chart_data.get("needed") and chart_data.get("labels"):
+                try:
+                    chart_url = self._render_chart(chart_data)
+                    slide["chartUrl"] = chart_url
+                    print(f"    📊 Chart generated")
+                except Exception as e:
+                    print(f"    ⚠️ Chart gen failed: {e}")
+            
+            enhanced.append(slide)
+        
+        return enhanced
     
-    async def generate_image(self, image_prompt: str) -> str:
-        """Generate an image using OpenRouter's image generation models"""
+    async def _generate_image(self, prompt: str) -> str:
+        """Generate image from prompt using OpenRouter"""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.base_url}/images",
+                    f"{self.base_url}/chat/completions",  # ✅ Use chat completions endpoint
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "User-Agent": "PresentationAI/1.0",
-                        "HTTP-Referer": "http://localhost:3000",
-                        "X-Title": "Presentation AI"
+                        "Content-Type": "application/json"
                     },
                     json={
                         "model": self.image_model,
-                        "prompt": f"Professional presentation slide image: {image_prompt}. Clean, modern, business-ready.",
-                        "size": "1024x1024",
-                        "num_images": 1
-                    },
-                    timeout=60.0
-                )
-
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                    except Exception as e:
-                        print(f"Image JSON parse error: {e}; body: {response.text}")
-                        return None
-                    # OpenRouter may return either { data: [{ url }]} or { output: [url] }
-                    if isinstance(data, dict):
-                        if "data" in data and data["data"]:
-                            first = data["data"][0]
-                            if isinstance(first, dict) and "url" in first:
-                                return first["url"]
-                        if "output" in data and data["output"]:
-                            return data["output"][0]
-                    return None
-                else:
-                    print(f"Image generation failed: {response.status_code} - {response.text}")
-                    return None
-
-        except Exception as e:
-            print(f"Error generating image: {e}")
-            return None
-
-    async def summarize_document(self, document_content: str, filename: str) -> Dict[str, Any]:
-        """Summarize a document and create presentation outline"""
-        system_prompt = """You are an expert presentation designer. Analyze the provided document and create a professional presentation outline.
-
-Return a JSON response with this exact structure:
-{
-  "title": "Presentation Title based on document",
-  "description": "Brief description of the document content",
-  "theme": "modern",
-  "slides": [
-    {
-      "type": "title",
-      "title": "Slide Title",
-      "content": "Slide content with bullet points or text",
-      "backgroundColor": "#3b82f6",
-      "textColor": "#ffffff",
-      "layout": "center",
-      "imagePrompt": "Description for AI image generation"
-    }
-  ]
-}
-
-Create a comprehensive presentation that covers:
-- Title slide with document summary
-- Key concepts and main points (3-5 slides)
-- Important details and supporting information
-- Conclusion slide
-- Include 1-2 image slides with relevant visuals
-
-Use professional color schemes and ensure content is well-structured and engaging."""
-
-        user_prompt = f"""Document: {filename}
-
-Content:
-{document_content}
-
-Please create a professional presentation outline from this document. Make it comprehensive and engaging, covering all the key points from the document."""
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "http://localhost:3000",
-                        "X-Title": "Presentation AI"
-                    },
-                    json={
-                        "model": self.default_model,
                         "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
                         ],
-                        "temperature": 0.7,
-                        "max_tokens": 3000
+                        "max_tokens": 1000  # For image models
                     },
-                    timeout=60.0
+                    timeout=60
                 )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    content = data["choices"][0]["message"]["content"]
-                    
-                    # Try to parse JSON from the response
-                    try:
-                        # Extract JSON from the response
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}') + 1
-                        if start_idx != -1 and end_idx != -1:
-                            json_content = content[start_idx:end_idx]
-                            presentation_data = json.loads(json_content)
-                            return presentation_data
-                        else:
-                            raise ValueError("No JSON found in response")
-                    except (json.JSONDecodeError, ValueError) as e:
-                        print(f"JSON parsing failed: {e}")
-                        return self._create_document_fallback_presentation(document_content, filename)
-                else:
-                    print(f"OpenRouter API error: {response.status_code} - {response.text}")
-                    return self._create_document_fallback_presentation(document_content, filename)
-                    
-        except Exception as e:
-            print(f"Error calling OpenRouter API: {e}")
-            return self._create_document_fallback_presentation(document_content, filename)
-
-    async def generate_outline(self, document_content: str) -> Dict[str, Any]:
-        """Generate a slide outline (titles and bullets) from content"""
-        system_prompt = (
-            "You are a presentation expert. Create a concise slide outline from the provided content.\n"
-            "Return JSON with: {\n  'title': str,\n  'sections': [ { 'title': str, 'bullets': [str, ...] } ]\n}\n"
-            "Use 5-10 sections max, short bullet points, business-ready language."
-        )
-        user_prompt = f"Content for outline:\n\n{document_content[:15000]}"
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "User-Agent": "PresentationAI/1.0",
-                        "HTTP-Referer": "http://localhost:3000",
-                        "X-Title": "Presentation AI"
-                    },
-                    json={
-                        "model": self.default_model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.5,
-                        "max_tokens": 1500
-                    },
-                    timeout=60.0
-                )
-
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                        content = data["choices"][0]["message"]["content"]
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}') + 1
-                        if start_idx != -1 and end_idx != -1:
-                            return json.loads(content[start_idx:end_idx])
-                        else:
-                            raise ValueError("No JSON in outline response")
-                    except Exception as e:
-                        print(f"Outline JSON parse error: {e}; body: {response.text}")
-                        return {"title": "Outline", "sections": []}
-                else:
-                    print(f"Outline API error: {response.status_code} - {response.text}")
-                    return {"title": "Outline", "sections": []}
-        except Exception as e:
-            print(f"Error generating outline: {e}")
-            return {"title": "Outline", "sections": []}
-
-    async def generate_slides_from_outline(self, outline: Dict[str, Any]) -> Dict[str, Any]:
-        """Turn an outline into slide-level content with bullets, notes, and image prompts"""
-        system_prompt = (
-            "You are a presentation expert. Given an outline (title + sections with bullets),\n"
-            "produce a JSON with: { 'title': str, 'description': str, 'theme': 'modern', 'slides': [\n"
-            "{ 'type': 'content'|'image'|'title'|'quote', 'title': str, 'content': str,\n"
-            "  'backgroundColor': '#ffffff', 'textColor': '#1f2937', 'layout': 'left',\n"
-            "  'imagePrompt': str (optional) } ] }\n"
-            "- Convert bullets into concise lines (max 6 per slide).\n"
-            "- For at least 1-2 slides, add an 'image' slide with a detailed 'imagePrompt' that matches the section.\n"
-            "- Keep content business-ready, clear, and short."
-        )
-        user_prompt = f"Outline to expand into slides:\n\n{json.dumps(outline)[:15000]}"
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "User-Agent": "PresentationAI/1.0",
-                        "HTTP-Referer": "http://localhost:3000",
-                        "X-Title": "Presentation AI"
-                    },
-                    json={
-                        "model": self.default_model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.6,
-                        "max_tokens": 2200
-                    },
-                    timeout=60.0
-                )
-
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                        content = data["choices"][0]["message"]["content"]
-                        start_idx = content.find('{')
-                        end_idx = content.rfind('}') + 1
-                        if start_idx != -1 and end_idx != -1:
-                            return json.loads(content[start_idx:end_idx])
-                        else:
-                            raise ValueError("No JSON in slides response")
-                    except Exception as e:
-                        print(f"Slides JSON parse error: {e}; body: {response.text}")
-                        # Minimal structure fallback
-                        return {
-                            "title": outline.get("title", "Presentation"),
-                            "description": "Generated from outline",
-                            "theme": "modern",
-                            "slides": []
-                        }
-                else:
-                    print(f"Slides API error: {response.status_code} - {response.text}")
-                    return {
-                        "title": outline.get("title", "Presentation"),
-                        "description": "Generated from outline",
-                        "theme": "modern",
-                        "slides": []
-                    }
-        except Exception as e:
-            print(f"Error generating slides: {e}")
-            return {
-                "title": outline.get("title", "Presentation"),
-                "description": "Generated from outline",
-                "theme": "modern",
-                "slides": []
-            }
-
-    def _create_document_fallback_presentation(self, document_content: str, filename: str) -> Dict[str, Any]:
-        """Create a fallback presentation from document content"""
-        # Extract title from filename
-        title = os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
         
-        # Create basic slides from document content
-        content_words = document_content.split()
-        chunk_size = 200
-        chunks = [' '.join(content_words[i:i + chunk_size]) for i in range(0, len(content_words), chunk_size)]
+            if response.status_code == 200:
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+            
+            # Check if response contains an image URL or base64
+            # Some models return URLs, others return markdown with URLs
+                import re
+            
+            # Try to extract URL from markdown format: ![image](url)
+                url_match = re.search(r'!\[.*?\]\((https?://[^\)]+)\)', content)
+                if url_match:
+                    return url_match.group(1)
+            
+            # Try to find any URL in the response
+                url_match = re.search(r'https?://[^\s]+', content)
+                if url_match:
+                    return url_match.group(0)
+            
+            # If the content itself is a URL
+                if content.startswith('http'):
+                    return content
+            
+                print(f"Unexpected image response format: {content[:200]}")
+            else:
+                print(f"Image generation failed: {response.status_code} - {response.text}")
         
+            return self._fallback_image()
+        
+        except Exception as e:
+            print(f"Image generation error: {e}")
+            return self._fallback_image()
+    
+    def _render_chart(self, chart_data: Dict) -> str:
+        """Render chart to base64 image"""
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        chart_type = chart_data.get("type", "bar")
+        labels = chart_data.get("labels", [])
+        values = chart_data.get("values", [])
+        title = chart_data.get("title", "Chart")
+        
+        if chart_type == "bar":
+            ax.bar(labels, values, color="#3b82f6")
+        elif chart_type == "pie":
+            ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90)
+        elif chart_type == "line":
+            ax.plot(labels, values, marker="o", linewidth=2, markersize=8)
+        elif chart_type == "scatter":
+            ax.scatter(range(len(values)), values, s=100, alpha=0.6)
+            ax.set_xticks(range(len(labels)))
+            ax.set_xticklabels(labels)
+        
+        ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
+        
+        if chart_data.get("description"):
+            ax.text(
+                0.5, -0.15, 
+                chart_data["description"],
+                transform=ax.transAxes,
+                ha="center",
+                fontsize=10,
+                style="italic"
+            )
+        
+        plt.tight_layout()
+        
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+        plt.close(fig)
+        
+        return f"data:image/png;base64,{img_base64}"
+    
+    def _apply_theme_colors(self, slide: Dict, theme) -> Dict:
+        """Apply theme colors to slide"""
+        slide["backgroundColor"] = theme.background_color
+        slide["textColor"] = theme.text_color
+        slide["primaryColor"] = theme.primary_color
+        slide["secondaryColor"] = theme.secondary_color
+        slide["accentColor"] = theme.accent_color
+        return slide
+    
+    def _get_theme_data(self, theme) -> Dict:
+        return {
+            "primaryColor": theme.primary_color,
+            "secondaryColor": theme.secondary_color,
+            "accentColor": theme.accent_color,
+            "backgroundColor": theme.background_color,
+            "textColor": theme.text_color,
+            "fontFamily": theme.font_family
+        }
+    
+    def _fallback_image(self) -> str:
+        return "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1024&h=1024&fit=crop"
+    
+    def _create_emergency_fallback(self, topic: str, num_slides: int) -> Dict:
+        """Emergency fallback if AI completely fails"""
         slides = [
             {
-                "type": "title",
-                "title": f"Summary of {title}",
-                "content": f"Key insights from {filename}",
-                "backgroundColor": "#3b82f6",
-                "textColor": "#ffffff",
-                "layout": "center"
+                "type": "content",
+                "title": f"Slide {i+1}: {topic}",
+                "content": f"Content about {topic}",
+                "imagePrompt": f"Professional image for {topic}",
+                "layout": "left",
+                "chartData": {"needed": False}
             }
+            for i in range(num_slides)
         ]
         
-        # Add content slides
-        for i, chunk in enumerate(chunks[:4]):  # Limit to 4 content slides
-            slides.append({
-                "type": "content",
-                "title": f"Key Point {i + 1}",
-                "content": chunk,
-                "backgroundColor": "#ffffff",
-                "textColor": "#1f2937",
-                "layout": "left"
-            })
-        
-        # Add conclusion
-        slides.append({
-            "type": "content",
-            "title": "Conclusion",
-            "content": f"Summary of {title}\n\nKey takeaways and insights from the document.",
-            "backgroundColor": "#1f2937",
-            "textColor": "#ffffff",
-            "layout": "center"
-        })
+        slides[0]["type"] = "title"
+        slides[0]["title"] = topic.title()
+        slides[0]["layout"] = "center"
         
         return {
-            "title": f"Document Summary: {title}",
-            "description": f"Presentation created from {filename}",
-            "theme": "modern",
+            "title": topic.title(),
+            "description": f"Presentation about {topic}",
             "slides": slides
         }
+    
+    # Backward compatibility methods
+    def get_available_themes(self) -> List[str]:
+        return theme_manager.get_available_themes()
+    
+    def create_custom_theme(self, name: str, **kwargs) -> str:
+        theme = theme_manager.create_custom_theme(name, **kwargs)
+        return theme.name
+    
+    async def generate_image(self, prompt: str) -> str:
+        """Public method for image generation"""
+        return await self._generate_image(prompt)
+    
+    async def generate_outline(self, content: str):
+        """Compatibility wrapper"""
+        result = await self._generate_with_comprehensive_prompt(
+            content, "modern", 8, self.default_model
+        )
+        return {"title": result["title"], "sections": result["slides"]}
+    
+    async def generate_slides_from_outline(self, outline: dict):
+        """Compatibility wrapper"""
+        return {"slides": outline.get("sections", [])}
+    
+    async def summarize_document(self, content: str, filename: str = "document"):
+        """Generate presentation from document content"""
+        return await self.generate_presentation(
+            topic=f"Summary of {filename}: {content[:200]}",
+            num_slides=6
+        )
 
-    async def get_available_models(self) -> List[Dict[str, Any]]:
-        """Get list of available FREE models from OpenRouter"""
-        # Return curated list of best FREE models
-        free_models = [
-            {
-                "id": "meta-llama/llama-3.1-8b-instruct:free",
-                "name": "Llama 3.1 8B (FREE)",
-                "description": "Best free model, excellent quality",
-                "context_length": 8192,
-                "pricing": {"prompt": "0", "completion": "0"}
-            },
-            {
-                "id": "microsoft/phi-3-mini-4k-instruct:free",
-                "name": "Phi-3 Mini (FREE)",
-                "description": "Fastest free model",
-                "context_length": 4096,
-                "pricing": {"prompt": "0", "completion": "0"}
-            },
-            {
-                "id": "google/gemini-flash-1.5:free",
-                "name": "Gemini Flash (FREE)",
-                "description": "Google's free model",
-                "context_length": 1048576,
-                "pricing": {"prompt": "0", "completion": "0"}
-            },
-            {
-                "id": "mistralai/mistral-7b-instruct:free",
-                "name": "Mistral 7B (FREE)",
-                "description": "European alternative",
-                "context_length": 32768,
-                "pricing": {"prompt": "0", "completion": "0"}
-            }
-        ]
-        
-        return free_models
 
-# Global instance
-ai_service = OpenRouterService()
+# Alias for backward compatibility
+PresentaionAi = AIHeavyPresentationService

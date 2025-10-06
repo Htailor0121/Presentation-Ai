@@ -6,10 +6,11 @@ from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
 import os
+import uuid
 import tempfile
 from datetime import datetime
-from ai_service import ai_service
-from document_processor import document_processor
+from ai_service import PresentaionAi
+import document_processor
 from pydantic import BaseModel
 
 class UrlIngestRequest(BaseModel):
@@ -59,6 +60,28 @@ class PresentationRequest(BaseModel):
 class GeneratePresentationRequest(BaseModel):
     prompt: str
     model: Optional[str] = None
+    theme: Optional[str] = None
+    include_interactive: bool = True
+
+class GenerateSlideRequest(BaseModel):
+    prompt: str
+    model: Optional[str] = None
+    theme: Optional[str] = None
+
+class EnhanceSlideRequest(BaseModel):
+    slide: dict
+    enhancement_type: str = "content"  # content, layout, or overall
+    model: Optional[str] = None
+
+class CreateThemeRequest(BaseModel):
+    name: str
+    primary_color: str
+    secondary_color: str
+    accent_color: str
+    background_color: str
+    text_color: str
+    font_family: str = "Inter, sans-serif"
+    image_style_keywords: List[str] = []
 
 class PresentationResponse(BaseModel):
     title: str
@@ -66,16 +89,21 @@ class PresentationResponse(BaseModel):
     slides: List[SlideRequest]
     theme: str
 
+# AI service instance
+ai_service = PresentaionAi()
+
 # AI service for generating presentations
-async def generate_presentation_from_prompt(prompt: str, model: str = None) -> PresentationResponse:
+async def generate_presentation_from_prompt(prompt: str, model: str = None, theme: str = None, include_interactive: bool = True) -> PresentationResponse:
     """Generate presentation content using OpenRouter AI"""
     try:
         # Use OpenRouter AI service
-        ai_response = await ai_service.generate_presentation(prompt, model)
+        ai_response = await ai_service.generate_presentation(prompt, model, theme, include_interactive)
         
         # Convert AI response to our format and generate images
         slides = []
         for slide_data in ai_response.get("slides", []):
+            if "id" not in slide_data or not slide_data["id"]:
+                slide_data["id"] = f"slide_{uuid.uuid4()}"
             image_url = slide_data.get("imageUrl")
 
             # Always ensure an image: build a prompt from title/content if none provided
@@ -199,7 +227,12 @@ async def generate_presentation(request: GeneratePresentationRequest):
             raise HTTPException(status_code=400, detail="Prompt is required")
         
         # Generate presentation using OpenRouter AI
-        presentation = await generate_presentation_from_prompt(request.prompt, request.model)
+        presentation = await generate_presentation_from_prompt(
+            request.prompt, 
+            request.model, 
+            request.theme, 
+            request.include_interactive
+        )
         return presentation
         
     except Exception as e:
@@ -422,6 +455,86 @@ async def summarize_document(request: dict):
     except Exception as e:
         print(f"Error in summarize_document endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to summarize document: {str(e)}")
+
+# New Gamma-style endpoints
+@app.post("/api/generate-slide")
+async def generate_slide(request: GenerateSlideRequest):
+    """Generate a single slide from a prompt (Gamma-style)"""
+    try:
+        if not request.prompt.strip():
+            raise HTTPException(status_code=400, detail="Prompt is required")
+        
+        slide = await ai_service.generate_slide_from_prompt(
+            request.prompt, 
+            request.model, 
+            request.theme
+        )
+        return slide
+        
+    except Exception as e:
+        print(f"Error in generate_slide endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate slide: {str(e)}")
+
+@app.post("/api/enhance-slide")
+async def enhance_slide(request: EnhanceSlideRequest):
+    """Enhance an existing slide with AI (Gamma-style sparkle feature)"""
+    try:
+        if not request.slide:
+            raise HTTPException(status_code=400, detail="Slide data is required")
+        
+        enhanced_slide = await ai_service.enhance_slide_with_ai(
+            request.slide, 
+            request.enhancement_type, 
+            request.model
+        )
+        return enhanced_slide
+        
+    except Exception as e:
+        print(f"Error in enhance_slide endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to enhance slide: {str(e)}")
+
+@app.get("/api/themes")
+async def get_themes():
+    """Get available themes"""
+    try:
+        themes = ai_service.get_available_themes()
+        return {
+            "themes": themes,
+            "message": "Available themes retrieved successfully"
+        }
+    except Exception as e:
+        print(f"Error fetching themes: {e}")
+        return {
+            "themes": [],
+            "error": "Failed to fetch themes"
+        }
+
+@app.post("/api/create-theme")
+async def create_theme(request: CreateThemeRequest):
+    """Create a custom theme"""
+    try:
+        if not request.name.strip():
+            raise HTTPException(status_code=400, detail="Theme name is required")
+        
+        theme_name = ai_service.create_custom_theme(
+            request.name,
+            primary_color=request.primary_color,
+            secondary_color=request.secondary_color,
+            accent_color=request.accent_color,
+            background_color=request.background_color,
+            text_color=request.text_color,
+            font_family=request.font_family,
+            image_style_keywords=request.image_style_keywords
+        )
+        
+        return {
+            "theme_name": theme_name,
+            "message": "Custom theme created successfully"
+        }
+        
+    except Exception as e:
+        print(f"Error creating theme: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create theme: {str(e)}")
 
 # Serve static files in production
 if os.path.exists("dist"):
