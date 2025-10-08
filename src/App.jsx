@@ -5,7 +5,6 @@ import CreatePage from "./pages/CreatePage";
 import GeneratePage from "./pages/GeneratePage";
 import Outline from "./pages/OutlinePage";
 import EditorPage from "./pages/EditorPage";
-import ImportPage from "./pages/ImportPage";
 import { PresentationProvider } from "./context/PresentationContext";
 
 function AppContent() {
@@ -18,7 +17,6 @@ function AppContent() {
           <Route path="/outline" element={<Outline />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/editor/:id" element={<EditorPage />} />
-          <Route path="/import" element={<ImportPage />} />
         </Routes>
       </main>
 
