@@ -12,6 +12,7 @@ from datetime import datetime
 from ai_service import PresentaionAi
 import document_processor
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 class UrlIngestRequest(BaseModel):
     url: str
@@ -35,7 +36,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -368,13 +369,22 @@ async def ingest_text(req: TextIngestRequest):
 @app.post("/api/generate-outline")
 async def generate_outline(req: OutlineRequest):
     try:
+        print(f"🧠 Received content from frontend: {req.content}")  # ✅ log incoming prompt
+
         if not req.content:
             raise HTTPException(status_code=400, detail="Content is required")
+
         outline = await ai_service.generate_outline(req.content)
+
+        print(f"✅ AI service returned outline: {outline}")  # ✅ log response
+
+        if not outline:
+            print("⚠️ Warning: outline is empty or None")
         return outline
     except Exception as e:
-        print(f"Error generating outline: {e}")
+        print(f"❌ Error generating outline: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate outline: {str(e)}")
+
 
 @app.post("/api/generate-slides")
 async def generate_slides(req: OutlineToSlidesRequest):
@@ -403,55 +413,62 @@ async def generate_slides(req: OutlineToSlidesRequest):
         print(f"Error generating slides from outline: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate slides: {str(e)}")
 
-@app.post("/api/summarize-document", response_model=PresentationResponse)
+@app.post("/api/summarize-document")
 async def summarize_document(request: dict):
-    """Create a presentation from document content"""
+    """
+    Create a presentation from document content or generate an outline only.
+    Use `outline_only: true` to skip slide image generation for faster outline preview.
+    """
     try:
         document_content = request.get("content")
         filename = request.get("filename", "document")
-        
+        outline_only = request.get("outline_only", False)
+
         if not document_content:
             raise HTTPException(status_code=400, detail="Document content is required")
-        
-        # Generate presentation from document
-        ai_response = await ai_service.summarize_document(document_content, filename)
-        
-        # Convert AI response to our format and generate images
+
+        ai_response = await ai_service.summarize_document(document_content, filename, outline_only)
+
+        # ✅ Outline-only mode: no image generation
+        if outline_only:
+            return {
+                "title": ai_response.get("title", "Document Summary"),
+                "description": ai_response.get("description", f"Outline from {filename}"),
+                "outline": ai_response.get("slides", []),
+            }
+
+        # 🖼️ Full mode (for later: when user clicks Generate Slides)
         slides = []
         for slide_data in ai_response.get("slides", []):
             image_url = slide_data.get("imageUrl")
 
-            # Always ensure an image: build a prompt from title/content if none provided
             if not image_url:
                 image_prompt = slide_data.get("imagePrompt")
                 if not image_prompt:
                     title = slide_data.get("title", "")
                     content = slide_data.get("content", "")
-                    image_prompt = f"Create a presentation-ready visual for: {title}. {content}. Clean, modern, professional, high-contrast."
+                    image_prompt = f"Create a presentation-ready visual for: {title}. {content}. Clean, modern, professional."
                 try:
                     gen = await ai_service.generate_image(image_prompt)
-                    image_url = gen or "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1024&h=1024&fit=crop"
+                    image_url = gen or "https://images.unsplash.com/photo-1557804506-669a67965ba0"
                 except Exception:
-                    image_url = "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1024&h=1024&fit=crop"
-            
-            slide = SlideRequest(
-                type=slide_data.get("type", "content"),
-                title=slide_data.get("title", ""),
-                content=slide_data.get("content", ""),
-                backgroundColor=slide_data.get("backgroundColor", "#ffffff"),
-                textColor=slide_data.get("textColor", "#1f2937"),
-                layout=slide_data.get("layout", "left"),
-                imageUrl=image_url
-            )
+                    image_url = "https://images.unsplash.com/photo-1557804506-669a67965ba0"
+
+            slide = {
+                "type": slide_data.get("type", "content"),
+                "title": slide_data.get("title", ""),
+                "content": slide_data.get("content", ""),
+                "imageUrl": image_url,
+            }
             slides.append(slide)
-        
-        return PresentationResponse(
-            title=ai_response.get("title", "Document Summary"),
-            description=ai_response.get("description", f"Presentation created from {filename}"),
-            slides=slides,
-            theme=ai_response.get("theme", "modern")
-        )
-        
+
+        return {
+            "title": ai_response.get("title", "Document Summary"),
+            "description": ai_response.get("description", f"Presentation created from {filename}"),
+            "slides": slides,
+            "theme": ai_response.get("theme", "modern"),
+        }
+
     except Exception as e:
         print(f"Error in summarize_document endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to summarize document: {str(e)}")

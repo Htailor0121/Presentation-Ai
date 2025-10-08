@@ -9,22 +9,72 @@ from interactive_features import interactive_manager
 import matplotlib.pyplot as plt
 import io, base64
 from datetime import datetime
+import urllib.parse
 
 load_dotenv()
 
 class AIHeavyPresentationService:
     """
-    Maximizes AI usage - single comprehensive prompt generates everything
+    Uses Hugging Face free models for image generation
     """
     
     def __init__(self):
         self.api_key = os.getenv("OPENROUTER_API_KEY")
         self.base_url = "https://openrouter.ai/api/v1"
         self.default_model = os.getenv("DEFAULT_AI_MODEL", "mistralai/mistral-7b-instruct:free")
-        self.image_model = os.getenv("IMAGE_MODEL", "google/gemini-2.0-flash-exp:free")
+        
+        # Hugging Face Inference API
+        self.hf_api_key = os.getenv("HUGGINGFACE_API_KEY", "")  # Optional but recommended for rate limits
+        self.hf_api_url = "https://api-inference.huggingface.co/models/"
+        
+        # Free image generation models on Hugging Face
+        self.hf_image_models = [
+            "stabilityai/stable-diffusion-2-1",           # Fast, reliable
+            "stabilityai/stable-diffusion-xl-base-1.0",   # High quality
+            "runwayml/stable-diffusion-v1-5",             # Classic SD
+            "prompthero/openjourney-v4",                   # Artistic style
+            "Lykon/dreamshaper-8",                        # Great for various styles
+            "SG161222/Realistic_Vision_V5.1_noVAE",       # Photorealistic
+        ]
+        
+        # Default model
+        self.current_hf_model = os.getenv("HF_IMAGE_MODEL", self.hf_image_models[0])
+        
+        # Fallback: Pollinations.ai (no API key needed)
+        self.pollinations_url = "https://image.pollinations.ai/prompt/"
         
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY not found")
+    
+    async def call_openrouter_api(self, system_prompt: str, user_prompt: str, model: str = None):
+        """Generic helper to send a chat completion request to OpenRouter."""
+        model = model or self.default_model
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
+
+        if response.status_code != 200:
+            raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
+
+        try:
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            print("⚠️ OpenRouter raw response:", response.text[:1000])  # print first 1000 chars
+            raise Exception(f"Failed to parse OpenRouter response as JSON: {e}")
     
     async def generate_presentation(
         self,
@@ -34,12 +84,10 @@ class AIHeavyPresentationService:
         include_interactive: bool = True,
         num_slides: int = 8
     ) -> Dict[str, Any]:
-        """
-        Generate complete presentation with ONE AI call
-        Compatible with existing API
-        """
+        """Generate complete presentation with AI-generated images"""
         
         print(f"🎨 Generating presentation with AI-heavy approach...")
+        print(f"🖼️  Using Hugging Face model: {self.current_hf_model}")
         
         # Step 1: Single comprehensive AI call
         presentation_data = await self._generate_with_comprehensive_prompt(
@@ -49,7 +97,7 @@ class AIHeavyPresentationService:
             model or self.default_model
         )
         
-        # Step 2: Only generate images and charts (technical tasks)
+        # Step 2: Generate AI images and charts
         enhanced_slides = await self._add_media_assets(
             presentation_data.get("slides", [])
         )
@@ -96,10 +144,9 @@ class AIHeavyPresentationService:
 YOU MUST:
 1. Design the entire presentation flow and structure
 2. Write detailed, engaging content for each slide
-3. Decide optimal slide types and layouts
-4. Create descriptive image prompts for AI image generation
-5. Identify slides that need data visualizations and specify chart data
-6. Ensure logical flow and narrative coherence
+3. Create concise image generation prompts for Stable Diffusion (20-30 words max)
+4. Identify slides that need data visualizations and specify chart data
+5. Ensure logical flow and narrative coherence
 
 RETURN ONLY THIS EXACT JSON STRUCTURE:
 {{
@@ -110,7 +157,7 @@ RETURN ONLY THIS EXACT JSON STRUCTURE:
       "type": "title|content|comparison|timeline|data",
       "title": "Compelling Slide Title",
       "content": "Detailed, well-written content (3-5 bullet points or 2-3 paragraphs)",
-      "imagePrompt": "Detailed description for AI image generation (be specific: style, mood, elements, colors)",
+      "imagePrompt": "Stable Diffusion prompt (20-30 words). Be specific but concise. Example: modern futuristic architecture with glass and steel, AI technology elements, professional photography, natural lighting, high detail, 4k quality",
       "layout": "center|left|right|two-column|full-image",
       "chartData": {{
         "needed": true|false,
@@ -124,14 +171,22 @@ RETURN ONLY THIS EXACT JSON STRUCTURE:
   ]
 }}
 
+IMAGE PROMPT GUIDELINES FOR STABLE DIFFUSION:
+- Keep to 20-30 words maximum
+- Include quality tags: "high detail", "professional", "4k", "photorealistic"
+- Specify style: "photography", "illustration", "3D render", "concept art"
+- Good examples:
+  * "futuristic smart building with holographic AI displays, glass architecture, blue lighting, professional architectural photography, high detail, 4k"
+  * "modern office interior, architect using AI software on tablet, natural lighting, professional photography, contemporary design, sharp focus"
+  * "abstract digital AI brain network, glowing neural connections, blue and purple colors, digital art, high tech, detailed illustration"
+
 GUIDELINES:
-- First slide MUST be an engaging title slide with type: "title"
+- First slide MUST be type: "title" with layout: "center"
 - Last slide should be conclusion/call-to-action
 - Vary slide types for engagement
 - Include 1-2 data visualization slides if topic involves numbers/trends
-- Image prompts should be detailed and specific
 - Keep content concise but meaningful
-- Ensure proper JSON formatting
+- Make image prompts suitable for Stable Diffusion
 
 IMPORTANT: Return ONLY the JSON, no other text."""
 
@@ -148,7 +203,7 @@ IMPORTANT: Return ONLY the JSON, no other text."""
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "You are an expert presentation designer. You create engaging, well-structured presentations with compelling content. You always return valid JSON."
+                                "content": "You are an expert presentation designer and Stable Diffusion prompt engineer. Create engaging presentations with concise, effective image prompts. Always return valid JSON."
                             },
                             {
                                 "role": "user",
@@ -176,157 +231,234 @@ IMPORTANT: Return ONLY the JSON, no other text."""
         except Exception as e:
             print(f"❌ Error in comprehensive prompt: {e}")
             return self._create_emergency_fallback(topic, num_slides)
-        
-    async def get_available_models(self) -> List[str]:
-        """Get available models from OpenRouter"""
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    "https://openrouter.ai/api/v1/models",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                    },
-                    timeout=10
-                )
-
-            if response.status_code == 200:
-                data = response.json()
-                models = data.get("data", [])
-                return [model["id"] for model in models if model.get("id")]
-            return []
-        except Exception as e:
-            print(f"Error fetching models from OpenRouter: {e}")
-            return []
     
     async def _add_media_assets(self, slides: List[Dict]) -> List[Dict]:
-        """Generate images and render charts"""
+        """Generate AI images using Hugging Face and render charts"""
         enhanced = []
         
         for i, slide in enumerate(slides):
             print(f"  Processing slide {i+1}/{len(slides)}: {slide.get('title')}")
             
-            # Generate image
-            if slide.get("imagePrompt"):
+            # Generate AI image
+            image_prompt = slide.get("imagePrompt", "")
+            if image_prompt:
                 try:
-                    image_url = await self._generate_image(slide["imagePrompt"])
-                    slide["imageUrl"] = image_url
+                    # Try Hugging Face first
+                    image_url = await self._generate_hf_image(image_prompt)
+                    if image_url:
+                        slide["imageUrl"] = image_url
+                        print(f"    🎨 Hugging Face image generated")
+                    else:
+                        # Fallback to Pollinations.ai
+                        print(f"    🔄 Trying Pollinations.ai fallback...")
+                        image_url = await self._generate_pollinations_image(image_prompt)
+                        slide["imageUrl"] = image_url
+                        print(f"    🎨 Pollinations.ai image generated")
                 except Exception as e:
-                    print(f"    ⚠️ Image gen failed: {e}")
-                    slide["imageUrl"] = self._fallback_image()
+                    print(f"    ⚠️ Image generation error: {e}")
+                    slide["imageUrl"] = self._get_placeholder_image(i)
+            else:
+                slide["imageUrl"] = self._get_placeholder_image(i)
             
-            # Generate chart
+            # Generate chart if needed
             chart_data = slide.get("chartData", {})
-            if chart_data.get("needed") and chart_data.get("labels"):
+            if chart_data.get("needed") and chart_data.get("labels") and chart_data.get("values"):
                 try:
                     chart_url = self._render_chart(chart_data)
-                    slide["chartUrl"] = chart_url
-                    print(f"    📊 Chart generated")
+                    if chart_url:
+                        slide["chartUrl"] = chart_url
+                        print(f"    📊 Chart generated")
                 except Exception as e:
-                    print(f"    ⚠️ Chart gen failed: {e}")
+                    print(f"    ⚠️ Chart generation failed: {e}")
             
             enhanced.append(slide)
         
         return enhanced
     
-    async def _generate_image(self, prompt: str) -> str:
-        """Generate image from prompt using OpenRouter"""
+    async def _generate_hf_image(self, prompt: str) -> str:
+        """
+        Generate image using Hugging Face Inference API
+        Returns base64 data URL
+        """
+        headers = {}
+        if self.hf_api_key:
+            headers["Authorization"] = f"Bearer {self.hf_api_key}"
+        
+        # Try primary model
+        result = await self._try_hf_model(self.current_hf_model, prompt, headers)
+        if result:
+            return result
+        
+        # Try alternative models
+        for model in self.hf_image_models:
+            if model != self.current_hf_model:
+                print(f"    🔄 Trying alternative HF model: {model.split('/')[-1]}")
+                result = await self._try_hf_model(model, prompt, headers)
+                if result:
+                    return result
+        
+        return None
+    
+    async def _try_hf_model(self, model: str, prompt: str, headers: dict) -> str:
+        """Try to generate image with a specific Hugging Face model"""
         try:
+            url = f"{self.hf_api_url}{model}"
+            
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.base_url}/chat/completions",  # ✅ Use chat completions endpoint
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.image_model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        "max_tokens": 1000  # For image models
-                    },
-                    timeout=60
+                    url,
+                    headers=headers,
+                    json={"inputs": prompt},
+                    timeout=120  # Hugging Face can take time for cold starts
                 )
-        
+            
             if response.status_code == 200:
-                data = response.json()
-                content = data["choices"][0]["message"]["content"]
+                # Image is returned as bytes
+                image_bytes = response.content
+                
+                # Convert to base64 data URL
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                return f"data:image/png;base64,{image_base64}"
             
-            # Check if response contains an image URL or base64
-            # Some models return URLs, others return markdown with URLs
-                import re
+            elif response.status_code == 503:
+                # Model is loading
+                print(f"    ⏳ Model loading (503), will retry...")
+                return None
             
-            # Try to extract URL from markdown format: ![image](url)
-                url_match = re.search(r'!\[.*?\]\((https?://[^\)]+)\)', content)
-                if url_match:
-                    return url_match.group(1)
-            
-            # Try to find any URL in the response
-                url_match = re.search(r'https?://[^\s]+', content)
-                if url_match:
-                    return url_match.group(0)
-            
-            # If the content itself is a URL
-                if content.startswith('http'):
-                    return content
-            
-                print(f"Unexpected image response format: {content[:200]}")
             else:
-                print(f"Image generation failed: {response.status_code} - {response.text}")
-        
-            return self._fallback_image()
-        
+                error_text = response.text[:200]
+                print(f"    ⚠️ HF API error {response.status_code}: {error_text}")
+                return None
+                
         except Exception as e:
-            print(f"Image generation error: {e}")
-            return self._fallback_image()
+            print(f"    ⚠️ HF model {model.split('/')[-1]} failed: {str(e)[:100]}")
+            return None
+    
+    async def _generate_pollinations_image(self, prompt: str) -> str:
+        """
+        Fallback: Generate image using Pollinations.ai (FREE, no API key)
+        """
+        try:
+            clean_prompt = prompt.strip()
+            encoded_prompt = urllib.parse.quote(clean_prompt)
+            image_url = f"{self.pollinations_url}{encoded_prompt}?width=1200&height=800&nologo=true&enhance=true"
+            return image_url
+        except Exception as e:
+            print(f"    Pollinations.ai error: {e}")
+            raise
+    
+    def _get_placeholder_image(self, index: int) -> str:
+        """Get a gradient placeholder if all generation fails"""
+        colors = [
+            ("#3b82f6", "#1e40af"),  # blue
+            ("#10b981", "#059669"),  # green
+            ("#f59e0b", "#d97706"),  # orange
+            ("#ef4444", "#dc2626"),  # red
+            ("#8b5cf6", "#7c3aed"),  # purple
+            ("#ec4899", "#db2777"),  # pink
+            ("#06b6d4", "#0891b2"),  # cyan
+            ("#84cc16", "#65a30d"),  # lime
+        ]
+        color1, color2 = colors[index % len(colors)]
+        
+        svg = f'''<svg width="1200" height="800" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="grad{index}" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style="stop-color:{color1};stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:{color2};stop-opacity:1" />
+                </linearGradient>
+            </defs>
+            <rect width="1200" height="800" fill="url(#grad{index})"/>
+            <circle cx="600" cy="400" r="120" fill="white" opacity="0.2"/>
+            <text x="600" y="420" font-family="Arial, sans-serif" font-size="48" fill="white" text-anchor="middle" font-weight="bold">
+                Slide {index + 1}
+            </text>
+        </svg>'''
+        
+        svg_base64 = base64.b64encode(svg.encode('utf-8')).decode('utf-8')
+        return f"data:image/svg+xml;base64,{svg_base64}"
     
     def _render_chart(self, chart_data: Dict) -> str:
         """Render chart to base64 image"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        chart_type = chart_data.get("type", "bar")
-        labels = chart_data.get("labels", [])
-        values = chart_data.get("values", [])
-        title = chart_data.get("title", "Chart")
-        
-        if chart_type == "bar":
-            ax.bar(labels, values, color="#3b82f6")
-        elif chart_type == "pie":
-            ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90)
-        elif chart_type == "line":
-            ax.plot(labels, values, marker="o", linewidth=2, markersize=8)
-        elif chart_type == "scatter":
-            ax.scatter(range(len(values)), values, s=100, alpha=0.6)
-            ax.set_xticks(range(len(labels)))
-            ax.set_xticklabels(labels)
-        
-        ax.set_title(title, fontsize=14, fontweight="bold", pad=20)
-        
-        if chart_data.get("description"):
-            ax.text(
-                0.5, -0.15, 
-                chart_data["description"],
-                transform=ax.transAxes,
-                ha="center",
-                fontsize=10,
-                style="italic"
-            )
-        
-        plt.tight_layout()
-        
-        buf = io.BytesIO()
-        plt.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-        buf.seek(0)
-        img_base64 = base64.b64encode(buf.read()).decode("utf-8")
-        plt.close(fig)
-        
-        return f"data:image/png;base64,{img_base64}"
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            plt.style.use('default')
+            
+            chart_type = chart_data.get("type", "bar")
+            labels = chart_data.get("labels", [])
+            values = chart_data.get("values", [])
+            title = chart_data.get("title", "Chart")
+            
+            if not labels or not values or len(labels) != len(values):
+                raise ValueError("Invalid chart data")
+            
+            if chart_type == "bar":
+                bars = ax.bar(labels, values, color="#3b82f6", alpha=0.8, edgecolor='#1e40af', linewidth=2)
+                ax.set_ylabel('Values', fontsize=11, fontweight='bold')
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height,
+                           f'{height:.1f}',
+                           ha='center', va='bottom', fontsize=9, fontweight='bold')
+                           
+            elif chart_type == "pie":
+                colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+                wedges, texts, autotexts = ax.pie(
+                    values, 
+                    labels=labels, 
+                    autopct="%1.1f%%", 
+                    startangle=90,
+                    colors=colors[:len(values)],
+                    textprops={'fontsize': 10, 'fontweight': 'bold'}
+                )
+                ax.axis('equal')
+                
+            elif chart_type == "line":
+                ax.plot(labels, values, marker="o", linewidth=3, markersize=10, 
+                       color='#3b82f6', markerfacecolor='#60a5fa', markeredgecolor='#1e40af', 
+                       markeredgewidth=2)
+                ax.set_ylabel('Values', fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--')
+                for i, (label, value) in enumerate(zip(labels, values)):
+                    ax.text(i, value, f'{value:.1f}', ha='center', va='bottom', 
+                           fontsize=9, fontweight='bold')
+                           
+            elif chart_type == "scatter":
+                scatter = ax.scatter(range(len(values)), values, s=200, alpha=0.6, 
+                                   c='#3b82f6', edgecolors='#1e40af', linewidth=2)
+                ax.set_xticks(range(len(labels)))
+                ax.set_xticklabels(labels, fontsize=10)
+                ax.set_ylabel('Values', fontsize=11, fontweight='bold')
+                ax.grid(True, alpha=0.3, linestyle='--')
+            
+            ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
+            if chart_type in ['bar', 'scatter']:
+                plt.xticks(rotation=45, ha='right', fontsize=10)
+            
+            if chart_data.get("description"):
+                fig.text(0.5, 0.02, chart_data["description"],
+                        ha="center", fontsize=11, style="italic", wrap=True)
+            
+            plt.tight_layout()
+            
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png", dpi=150, bbox_inches="tight", 
+                       facecolor='white', edgecolor='none')
+            buf.seek(0)
+            img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+            plt.close(fig)
+            
+            return f"data:image/png;base64,{img_base64}"
+            
+        except Exception as e:
+            print(f"Chart rendering error: {e}")
+            plt.close('all')
+            return None
     
     def _apply_theme_colors(self, slide: Dict, theme) -> Dict:
-        """Apply theme colors to slide"""
         slide["backgroundColor"] = theme.background_color
         slide["textColor"] = theme.text_color
         slide["primaryColor"] = theme.primary_color
@@ -344,17 +476,13 @@ IMPORTANT: Return ONLY the JSON, no other text."""
             "fontFamily": theme.font_family
         }
     
-    def _fallback_image(self) -> str:
-        return "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1024&h=1024&fit=crop"
-    
     def _create_emergency_fallback(self, topic: str, num_slides: int) -> Dict:
-        """Emergency fallback if AI completely fails"""
         slides = [
             {
                 "type": "content",
                 "title": f"Slide {i+1}: {topic}",
                 "content": f"Content about {topic}",
-                "imagePrompt": f"Professional image for {topic}",
+                "imagePrompt": f"{topic} professional illustration, modern style, high quality",
                 "layout": "left",
                 "chartData": {"needed": False}
             }
@@ -371,7 +499,23 @@ IMPORTANT: Return ONLY the JSON, no other text."""
             "slides": slides
         }
     
-    # Backward compatibility methods
+    async def get_available_models(self) -> List[str]:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    timeout=10
+                )
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("data", [])
+                return [model["id"] for model in models if model.get("id")]
+            return []
+        except Exception as e:
+            print(f"Error fetching models: {e}")
+            return []
+    
     def get_available_themes(self) -> List[str]:
         return theme_manager.get_available_themes()
     
@@ -380,26 +524,119 @@ IMPORTANT: Return ONLY the JSON, no other text."""
         return theme.name
     
     async def generate_image(self, prompt: str) -> str:
-        """Public method for image generation"""
-        return await self._generate_image(prompt)
+        result = await self._generate_hf_image(prompt)
+        if result:
+            return result
+        return await self._generate_pollinations_image(prompt)
     
     async def generate_outline(self, content: str):
-        """Compatibility wrapper"""
         result = await self._generate_with_comprehensive_prompt(
             content, "modern", 8, self.default_model
         )
         return {"title": result["title"], "sections": result["slides"]}
     
     async def generate_slides_from_outline(self, outline: dict):
-        """Compatibility wrapper"""
         return {"slides": outline.get("sections", [])}
     
-    async def summarize_document(self, content: str, filename: str = "document"):
-        """Generate presentation from document content"""
-        return await self.generate_presentation(
-            topic=f"Summary of {filename}: {content[:200]}",
-            num_slides=6
-        )
+    # ai_service.py (inside class AIHeavyPresentationService)
+
+    async def summarize_document(self, document_content: str, filename: str, outline_only: bool = False):
+        """
+        Summarize document content and optionally create presentation-style slides.
+        Removes junk text and normalizes titles for clarity.
+        """
+        try:
+            system_prompt = (
+                "You are an expert summarizer and presentation creator. "
+                "Summarize this document into clean, concise slides. "
+                "Each slide should have a clear title and short bullet points. "
+                "Do not include phrases like 'AI-generated section overview', 'Outline', 'Slide 1', 'Section 1', or similar. "
+                "Only output meaningful slide titles and their content."
+            )
+    
+            user_prompt = f"Document content:\n{document_content[:8000]}"
+    
+            summary = await self.call_openrouter_api(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt
+            )
+    
+            if not summary or not summary.strip():
+                raise ValueError("Empty summary returned from model")
+    
+            # Split summary into sections
+            raw_sections = [s.strip() for s in summary.split("\n\n") if s.strip()]
+            if len(raw_sections) <= 1:
+                raw_sections = [s.strip() for s in summary.split("\n") if s.strip()]
+    
+            slides = []
+            for section in raw_sections:
+                # 🧹 Skip garbage text or filler
+                if any(bad in section.lower() for bad in [
+                    "ai-generated", "section overview", "outline", "placeholder"
+                ]):
+                    continue
+                
+                lines = [line.strip() for line in section.split("\n") if line.strip()]
+                if not lines:
+                    continue
+                
+                # Title heuristic: first line
+                first_line = lines[0]
+                content = "\n".join(lines[1:]).strip()
+    
+                # 🧠 Clean up title text
+                title = first_line
+                title = (
+                    title.replace("Slide", "")
+                    .replace("Section", "")
+                    .replace("Title", "")
+                    .replace(":", "")
+                    .strip()
+                )
+    
+                # Fallback: short or missing titles
+                if not title or len(title.split()) > 12:
+                    title = f"Slide {len(slides) + 1}"
+    
+                # Clean markdown dividers like ---
+                content = "\n".join(
+                    line for line in content.split("\n") if not line.strip().startswith("---")
+                ).strip()
+    
+                # Skip slides that are empty or nonsense
+                if len(content) < 5 and len(title) < 3:
+                    continue
+                
+                slides.append({
+                    "type": "content",
+                    "title": title,
+                    "content": content
+                })
+    
+            # Fallback if no slides found
+            if not slides:
+                slides = [{
+                    "type": "content",
+                    "title": "Summary",
+                    "content": summary.strip()
+                }]
+    
+            return {
+                "title": f"Summary of {filename}",
+                "description": "Auto-generated summary and outline",
+                "slides": slides,
+                "theme": "modern"
+            }
+    
+        except Exception as e:
+            print(f"❌ summarize_document failed: {e}")
+            return {
+                "title": "Error Summary",
+                "description": f"Failed to summarize: {str(e)}",
+                "slides": [{"title": "Error", "content": str(e)}],
+                "theme": "modern"
+            }
 
 
 # Alias for backward compatibility

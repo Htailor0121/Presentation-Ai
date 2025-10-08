@@ -8,6 +8,7 @@ import io
 import tempfile
 from typing import Dict, Any
 from bs4 import BeautifulSoup
+import mimetypes
 
 # NOTE: Tesseract OCR is optionally used for images / scanned PDFs.
 # If you want OCR: pip install pytesseract pillow  and install system tesseract binary.
@@ -64,30 +65,62 @@ async def process_document(path: str, filename: str) -> Dict[str, Any]:
     """
     try:
         ext = os.path.splitext(filename)[1].lower()
-        if ext == ".pdf":
+        file_type, _ = mimetypes.guess_type(path)
+        file_type = file_type or ""
+        print(f"📄 Detected file type (mimetypes): {file_type}")
+
+        content = ""
+
+        # --- Prefer MIME detection first ---
+        if "pdf" in file_type:
             content = extract_text_from_pdf(path)
-        elif ext in (".docx", ".doc"):
+        elif "wordprocessingml" in file_type:
             content = extract_text_from_docx(path)
-        elif ext in (".xlsx", ".xls", ".csv"):
+        elif "vnd.ms-powerpoint" in file_type or "presentationml" in file_type:
+            content = extract_text_from_pptx(path)
+        elif "spreadsheetml" in file_type or "excel" in file_type or "csv" in file_type:
             content = extract_text_from_spreadsheet(path)
-        elif ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
-            content = extract_text_from_image(path)
-        elif ext == ".txt":
+        elif "text" in file_type:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
-        elif ext == ".pptx":
-            content = extract_text_from_pptx(path)
-        else:
-            # fallback: try reading binary -> text
-            with open(path, "rb") as f:
-                raw = f.read()
-            try:
-                content = raw.decode("utf-8", errors="ignore")
-            except Exception:
-                content = ""
-        return {"success": True, "filename": filename, "content": content, "word_count": len(content.split()), "char_count": len(content)}
+        elif "image" in file_type:
+            content = extract_text_from_image(path)
+
+        # --- Fallback: use extension-based detection ---
+        if not content.strip():
+            if ext == ".pdf":
+                content = extract_text_from_pdf(path)
+            elif ext in (".docx", ".doc"):
+                content = extract_text_from_docx(path)
+            elif ext in (".xlsx", ".xls", ".csv"):
+                content = extract_text_from_spreadsheet(path)
+            elif ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
+                content = extract_text_from_image(path)
+            elif ext == ".txt":
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+            elif ext == ".pptx":
+                content = extract_text_from_pptx(path)
+            else:
+                with open(path, "rb") as f:
+                    raw = f.read()
+                try:
+                    content = raw.decode("utf-8", errors="ignore")
+                except Exception:
+                    content = ""
+
+        return {
+            "success": True,
+            "filename": filename,
+            "content": content,
+            "word_count": len(content.split()),
+            "char_count": len(content),
+        }
+
     except Exception as e:
+        print(f"❌ Error processing {filename}: {e}")
         return {"success": False, "error": str(e), "filename": filename, "content": ""}
+
 
 
 def extract_text_from_pdf(path: str) -> str:
@@ -103,10 +136,20 @@ def extract_text_from_pdf(path: str) -> str:
 
 
 def extract_text_from_docx(path: str) -> str:
-    """Extract text from DOCX using mammoth."""
-    with open(path, "rb") as f:
-        result = mammoth.extract_raw_text(f)
-    return result.value or ""
+    """Extract text from DOCX using mammoth. Falls back if not a valid zip."""
+    try:
+        with open(path, "rb") as f:
+            result = mammoth.extract_raw_text(f)
+        return result.value or ""
+    except Exception as e:
+        print(f"⚠️ mammoth failed: {e} — falling back to basic read()")
+        try:
+            # Fallback: attempt plain text extraction
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+        except Exception:
+            return ""
+
 
 
 def extract_text_from_spreadsheet(path: str) -> str:

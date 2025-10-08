@@ -1,170 +1,166 @@
-import React, { createContext, useContext, useReducer } from 'react'
-import { v4 as uuidv4 } from 'uuid'
+import React, { createContext, useContext, useReducer } from "react";
+import { v4 as uuidv4 } from "uuid";
 
 const initialState = {
   presentations: [],
   currentPresentation: null,
   isLoading: false,
   error: null,
-}
+};
 
 function presentationReducer(state, action) {
   switch (action.type) {
-    case 'CREATE_PRESENTATION':
+    case "CREATE_PRESENTATION": {
       const newPresentation = {
         ...action.payload,
         id: uuidv4(),
+        slides: action.payload.slides || [],
         createdAt: new Date(),
         updatedAt: new Date(),
-      }
+      };
       return {
         ...state,
         presentations: [...state.presentations, newPresentation],
         currentPresentation: newPresentation,
-      }
+        error: null,
+      };
+    }
 
-    case 'UPDATE_PRESENTATION':
+    case "UPDATE_PRESENTATION":
       return {
         ...state,
-        presentations: state.presentations.map(p =>
-          p.id === action.payload.id ? { ...action.payload, updatedAt: new Date() } : p
+        presentations: state.presentations.map((p) =>
+          p.id === action.payload.id
+            ? { ...action.payload, updatedAt: new Date() }
+            : p
         ),
-        currentPresentation: state.currentPresentation?.id === action.payload.id ? action.payload : state.currentPresentation,
-      }
+        currentPresentation:
+          state.currentPresentation?.id === action.payload.id
+            ? { ...action.payload, updatedAt: new Date() }
+            : state.currentPresentation,
+        error: null,
+      };
 
-    case 'DELETE_PRESENTATION':
+    case "DELETE_PRESENTATION":
       return {
         ...state,
-        presentations: state.presentations.filter(p => p.id !== action.payload),
-        currentPresentation: state.currentPresentation?.id === action.payload ? null : state.currentPresentation,
-      }
+        presentations: state.presentations.filter(
+          (p) => p.id !== action.payload
+        ),
+        currentPresentation:
+          state.currentPresentation?.id === action.payload
+            ? null
+            : state.currentPresentation,
+        error: null,
+      };
 
-    case 'SET_CURRENT_PRESENTATION':
+    case "SET_CURRENT_PRESENTATION":
       return {
         ...state,
         currentPresentation: action.payload,
-      }
+        error: null,
+      };
 
-    case 'ADD_SLIDE':
-      const presentationToAddSlide = state.presentations.find(p => p.id === action.payload.presentationId)
-      if (!presentationToAddSlide) return state
+    case "ADD_SLIDE": {
+      const { presentationId, slide } = action.payload;
+      const updated = state.presentations.map((p) => {
+        if (p.id !== presentationId) return p;
+        return {
+          ...p,
+          slides: [...(p.slides || []), { ...slide, id: uuidv4() }],
+          updatedAt: new Date(),
+        };
+      });
 
-      const newSlide = {
-        ...action.payload.slide,
-        id: uuidv4(),
-      }
+      const current =
+        state.currentPresentation?.id === presentationId
+          ? updated.find((p) => p.id === presentationId)
+          : state.currentPresentation;
 
-      const updatedPresentationWithSlide = {
-        ...presentationToAddSlide,
-        slides: [...presentationToAddSlide.slides, newSlide],
-        updatedAt: new Date(),
-      }
+      return { ...state, presentations: updated, currentPresentation: current };
+    }
 
-      return {
-        ...state,
-        presentations: state.presentations.map(p =>
-          p.id === action.payload.presentationId ? updatedPresentationWithSlide : p
-        ),
-        currentPresentation: state.currentPresentation?.id === action.payload.presentationId
-          ? updatedPresentationWithSlide
-          : state.currentPresentation,
-      }
+    case "UPDATE_SLIDE": {
+      const { presentationId, slide } = action.payload;
+      const updated = state.presentations.map((p) => {
+        if (p.id !== presentationId) return p;
+        return {
+          ...p,
+          slides: p.slides.map((s) => (s.id === slide.id ? slide : s)),
+          updatedAt: new Date(),
+        };
+      });
 
-    case 'UPDATE_SLIDE':
-      const presentationToUpdateSlide = state.presentations.find(p => p.id === action.payload.presentationId)
-      if (!presentationToUpdateSlide) return state
+      const current =
+        state.currentPresentation?.id === presentationId
+          ? updated.find((p) => p.id === presentationId)
+          : state.currentPresentation;
 
-      const updatedPresentationWithUpdatedSlide = {
-        ...presentationToUpdateSlide,
-        slides: presentationToUpdateSlide.slides.map(s =>
-          s.id === action.payload.slide.id ? action.payload.slide : s
-        ),
-        updatedAt: new Date(),
-      }
+      return { ...state, presentations: updated, currentPresentation: current };
+    }
 
-      return {
-        ...state,
-        presentations: state.presentations.map(p =>
-          p.id === action.payload.presentationId ? updatedPresentationWithUpdatedSlide : p
-        ),
-        currentPresentation: state.currentPresentation?.id === action.payload.presentationId
-          ? updatedPresentationWithUpdatedSlide
-          : state.currentPresentation,
-      }
+    case "DELETE_SLIDE": {
+      const { presentationId, slideId } = action.payload;
+      const updated = state.presentations.map((p) => {
+        if (p.id !== presentationId) return p;
+        return {
+          ...p,
+          slides: p.slides.filter((s) => s.id !== slideId),
+          updatedAt: new Date(),
+        };
+      });
 
-    case 'DELETE_SLIDE':
-      const presentationToDeleteSlide = state.presentations.find(p => p.id === action.payload.presentationId)
-      if (!presentationToDeleteSlide) return state
+      const current =
+        state.currentPresentation?.id === presentationId
+          ? updated.find((p) => p.id === presentationId)
+          : state.currentPresentation;
 
-      const updatedPresentationWithDeletedSlide = {
-        ...presentationToDeleteSlide,
-        slides: presentationToDeleteSlide.slides.filter(s => s.id !== action.payload.slideId),
-        updatedAt: new Date(),
-      }
+      return { ...state, presentations: updated, currentPresentation: current };
+    }
 
-      return {
-        ...state,
-        presentations: state.presentations.map(p =>
-          p.id === action.payload.presentationId ? updatedPresentationWithDeletedSlide : p
-        ),
-        currentPresentation: state.currentPresentation?.id === action.payload.presentationId
-          ? updatedPresentationWithDeletedSlide
-          : state.currentPresentation,
-      }
+    case "REORDER_SLIDES": {
+      const { presentationId, slides } = action.payload;
+      const updated = state.presentations.map((p) =>
+        p.id === presentationId
+          ? { ...p, slides, updatedAt: new Date() }
+          : p
+      );
 
-    case 'REORDER_SLIDES':
-      const presentationToReorder = state.presentations.find(p => p.id === action.payload.presentationId)
-      if (!presentationToReorder) return state
+      const current =
+        state.currentPresentation?.id === presentationId
+          ? updated.find((p) => p.id === presentationId)
+          : state.currentPresentation;
 
-      const updatedPresentationWithReorderedSlides = {
-        ...presentationToReorder,
-        slides: action.payload.slides,
-        updatedAt: new Date(),
-      }
+      return { ...state, presentations: updated, currentPresentation: current };
+    }
 
-      return {
-        ...state,
-        presentations: state.presentations.map(p =>
-          p.id === action.payload.presentationId ? updatedPresentationWithReorderedSlides : p
-        ),
-        currentPresentation: state.currentPresentation?.id === action.payload.presentationId
-          ? updatedPresentationWithReorderedSlides
-          : state.currentPresentation,
-      }
+    case "SET_LOADING":
+      return { ...state, isLoading: action.payload };
 
-    case 'SET_LOADING':
-      return {
-        ...state,
-        isLoading: action.payload,
-      }
-
-    case 'SET_ERROR':
-      return {
-        ...state,
-        error: action.payload,
-      }
+    case "SET_ERROR":
+      return { ...state, error: action.payload };
 
     default:
-      return state
+      return state;
   }
 }
 
-const PresentationContext = createContext(null)
+const PresentationContext = createContext(null);
 
 export function PresentationProvider({ children }) {
-  const [state, dispatch] = useReducer(presentationReducer, initialState)
+  const [state, dispatch] = useReducer(presentationReducer, initialState);
 
   return (
     <PresentationContext.Provider value={{ state, dispatch }}>
       {children}
     </PresentationContext.Provider>
-  )
+  );
 }
 
 export function usePresentation() {
-  const context = useContext(PresentationContext)
+  const context = useContext(PresentationContext);
   if (!context) {
-    throw new Error('usePresentation must be used within a PresentationProvider')
+    throw new Error("usePresentation must be used within a PresentationProvider");
   }
-  return context
+  return context;
 }

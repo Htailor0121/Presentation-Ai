@@ -1,310 +1,369 @@
-import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Plus, Save, Download, Eye, ArrowLeft, X } from 'lucide-react'
-import ExportModal from '../components/ExportModal'
-import { usePresentation } from '../context/PresentationContext'
-import SlideEditor from '../components/SlideEditor'
-import SlidePreview from '../components/SlidePreview'
-import DragDropSlideList from '../components/DragDropSlideList'
-import toast from 'react-hot-toast'
+import React, { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
+import toast from "react-hot-toast";
+import presentationAPI from "../services/api";
+import ThemeSelector from "../components/ThemeSelector";
+import {
+  Save,
+  Eye,
+  Download,
+  Plus,
+  Type,
+  Image as ImageIcon,
+  Search,
+  BarChart2,
+  Layout,
+  Sparkles,
+  HelpCircle,
+  RefreshCcw,
+} from "lucide-react";
+
+// 🌈 Text & accent themes (no background change)
+const gradientThemes = {
+  "classic-light": { color: "#1f2937" },
+  "classic-dark": { color: "#0f172a" },
+  sunset: { color: "#d97706" },
+  aqua: { color: "#0369a1" },
+  cyber: { color: "#7c3aed" },
+  mint: { color: "#047857" },
+  peach: { color: "#b45309" },
+  galaxy: { color: "#1e3a8a" },
+  matrix: { color: "#059669" },
+  lavender: { color: "#6d28d9" },
+};
+
+// 🎨 Fixed “Figma white” background
+const figmaWhiteBackground = {
+  background: `
+    radial-gradient(circle at 15% 20%, rgba(236, 72, 153, 0.08), transparent 60%),
+    radial-gradient(circle at 85% 70%, rgba(59, 130, 246, 0.08), transparent 60%),
+    linear-gradient(135deg, #ffffff, #f7f8fa)
+  `,
+};
 
 const EditorPage = () => {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const { state, dispatch } = usePresentation()
-  const [selectedSlideId, setSelectedSlideId] = useState(null)
-  const [isPreviewMode, setIsPreviewMode] = useState(false)
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
-  const [isAllPreviewOpen, setIsAllPreviewOpen] = useState(false)
+  const location = useLocation();
+  const outline = location.state?.outline || [];
+  const presentationId = location.state?.id;
 
-  const currentPresentation = state.currentPresentation
+  const [slides, setSlides] = useState([]);
+  const [selectedSlide, setSelectedSlide] = useState(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingContent, setEditingContent] = useState(false);
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState("classic-light");
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // 🧠 Load theme
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("presentationTheme");
+    if (savedTheme && gradientThemes[savedTheme]) setCurrentTheme(savedTheme);
+  }, []);
 
   useEffect(() => {
-    if (id && currentPresentation?.id !== id) {
-      const presentation = state.presentations.find(p => p.id === id)
-      if (presentation) {
-        dispatch({ type: 'SET_CURRENT_PRESENTATION', payload: presentation })
-        if (presentation.slides.length > 0) {
-          setSelectedSlideId(presentation.slides[0].id)
+    localStorage.setItem("presentationTheme", currentTheme);
+  }, [currentTheme]);
+
+  // 🔗 Load presentation or outline
+  useEffect(() => {
+    const loadPresentation = async () => {
+      try {
+        if (presentationId) {
+          const data = await presentationAPI.getPresentations();
+          const existing = data.find((p) => p.id === presentationId);
+          if (existing) {
+            setSlides(existing.slides || []);
+            setSelectedSlide(existing.slides?.[0] || null);
+          }
+        } else if (outline.length > 0) {
+          const formatted = outline.map((item, i) => ({
+            id: i + 1,
+            title: item.title || `Slide ${i + 1}`,
+            content: item.content || "Generated AI Slide Content",
+            imageUrl: item.imagePrompt?.startsWith("http")
+              ? item.imagePrompt
+              : `https://image.pollinations.ai/prompt/${encodeURIComponent(
+                  item.imagePrompt || item.title
+                )}`,
+            layout: item.layout || "left",
+          }));
+          setSlides(formatted);
+          setSelectedSlide(formatted[0]);
         }
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to load presentation");
+      }
+    };
+    loadPresentation();
+  }, [outline, presentationId]);
+
+  // 💾 Save slides
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      toast.loading("Saving presentation...");
+
+      const payload = { slides, theme: currentTheme };
+
+      if (presentationId) {
+        await presentationAPI.savePresentation({ id: presentationId, ...payload });
       } else {
-        navigate('/')
+        await presentationAPI.savePresentation(payload);
       }
-    } else if (!currentPresentation) {
-      // Create a new presentation if none exists
-      const newPresentation = {
-        title: 'Untitled Presentation',
-        description: '',
-        slides: [],
-        theme: 'modern',
-      }
-      dispatch({ type: 'CREATE_PRESENTATION', payload: newPresentation })
-    }
-  }, [id, currentPresentation, state.presentations, dispatch, navigate])
 
+      toast.dismiss();
+      toast.success("✅ Presentation saved successfully!");
+    } catch (err) {
+      console.error(err);
+      toast.dismiss();
+      toast.error("❌ Failed to save presentation");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 📦 Export slides
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      toast.loading("Exporting presentation...");
+
+      const response = await presentationAPI.getPresentations();
+      const pres = response.find((p) => p.id === presentationId);
+      if (!pres) throw new Error("Presentation not found");
+
+      const blob = new Blob([JSON.stringify(pres, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "presentation.json";
+      link.click();
+
+      toast.dismiss();
+      toast.success("📄 Exported successfully!");
+    } catch (err) {
+      console.error("Export failed:", err);
+      toast.dismiss();
+      toast.error("❌ Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ➕ Add slide
   const handleAddSlide = () => {
-    if (!currentPresentation) return
-
     const newSlide = {
-      type: 'content',
-      title: 'New Slide',
-      content: 'Add your content here...',
-      backgroundColor: '#ffffff',
-      textColor: '#1f2937',
-      layout: 'left',
-    }
+      id: slides.length + 1,
+      title: `New Slide ${slides.length + 1}`,
+      content: "Add your content here...",
+      imageUrl: "",
+      layout: "left",
+    };
+    setSlides([...slides, newSlide]);
+    setSelectedSlide(newSlide);
+  };
 
-    dispatch({
-      type: 'ADD_SLIDE',
-      payload: {
-        presentationId: currentPresentation.id,
-        slide: newSlide,
-      },
-    })
+  const handleChangeLayout = () => {
+    if (!selectedSlide) return;
+    const layouts = ["left", "right", "center"];
+    const nextLayout = layouts[(layouts.indexOf(selectedSlide.layout) + 1) % layouts.length];
+    const updatedSlides = slides.map((s) =>
+      s.id === selectedSlide.id ? { ...s, layout: nextLayout } : s
+    );
+    setSlides(updatedSlides);
+    setSelectedSlide({ ...selectedSlide, layout: nextLayout });
+  };
 
-    // Select the new slide
-    const newSlideId = currentPresentation.slides.length > 0 
-      ? currentPresentation.slides[currentPresentation.slides.length - 1].id 
-      : null
-    setSelectedSlideId(newSlideId)
-  }
+  const handleChangeImage = () => {
+    if (!selectedSlide) return;
+    const newUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(
+      selectedSlide.title + " illustration"
+    )}`;
+    const updatedSlides = slides.map((s) =>
+      s.id === selectedSlide.id ? { ...s, imageUrl: newUrl } : s
+    );
+    setSlides(updatedSlides);
+    setSelectedSlide({ ...selectedSlide, imageUrl: newUrl });
+  };
 
-  const handleUpdateSlide = (slide) => {
-    if (!currentPresentation) return
-
-    dispatch({
-      type: 'UPDATE_SLIDE',
-      payload: {
-        presentationId: currentPresentation.id,
-        slide,
-      },
-    })
-  }
-
-  const handleDeleteSlide = (slideId) => {
-    if (!currentPresentation) return
-
-    dispatch({
-      type: 'DELETE_SLIDE',
-      payload: {
-        presentationId: currentPresentation.id,
-        slideId,
-      },
-    })
-
-    // Select another slide if the current one was deleted
-    if (selectedSlideId === slideId) {
-      const remainingSlides = currentPresentation.slides.filter(s => s.id !== slideId)
-      setSelectedSlideId(remainingSlides.length > 0 ? remainingSlides[0].id : null)
-    }
-  }
-
-  const handleReorderSlides = (slides) => {
-    if (!currentPresentation) return
-
-    dispatch({
-      type: 'REORDER_SLIDES',
-      payload: {
-        presentationId: currentPresentation.id,
-        slides,
-      },
-    })
-  }
-
-  const handleSavePresentation = () => {
-    if (!currentPresentation) return
-
-    dispatch({
-      type: 'UPDATE_PRESENTATION',
-      payload: currentPresentation,
-    })
-    toast.success('Presentation saved!')
-  }
-
-  const selectedSlide = currentPresentation?.slides.find(s => s.id === selectedSlideId)
-
-  if (!currentPresentation) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
+  const handleEnhance = () => toast("✨ AI enhancement coming soon!");
+  const handleAddChart = () => {
+    if (!selectedSlide) return;
+    const newContent =
+      selectedSlide.content + "\n\n📊 [AI Chart Placeholder: Replace with chart data]";
+    const updatedSlides = slides.map((s) =>
+      s.id === selectedSlide.id ? { ...s, content: newContent } : s
+    );
+    setSlides(updatedSlides);
+    setSelectedSlide({ ...selectedSlide, content: newContent });
+  };
 
   return (
-    <div className="min-h-screen bg-secondary-50">
-      {/* Header */}
-      <div className="bg-white border-b border-secondary-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => navigate('/')}
-              className="flex items-center space-x-2 text-secondary-600 hover:text-secondary-900"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back</span>
-            </button>
-            <h1 className="text-xl font-semibold text-secondary-900">
-              {currentPresentation.title}
-            </h1>
-          </div>
-
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setIsPreviewMode(!isPreviewMode)}
-              className="btn-secondary flex items-center space-x-2"
-            >
-              <Eye className="w-4 h-4" />
-              <span>{isPreviewMode ? 'Edit' : 'Preview'}</span>
-            </button>
-            <button
-              onClick={() => setIsAllPreviewOpen(true)}
-              className="btn-secondary flex items-center space-x-2"
-            >
-              <Eye className="w-4 h-4" />
-              <span>Preview All</span>
-            </button>
-            <button
-              onClick={handleSavePresentation}
-              className="btn-secondary flex items-center space-x-2"
-            >
-              <Save className="w-4 h-4" />
-              <span>Save</span>
-            </button>
-            <button 
-              onClick={() => setIsExportModalOpen(true)}
-              className="btn-primary flex items-center space-x-2"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex h-[calc(100vh-73px)]">
-        {/* Slide List Sidebar */}
-        <div className="w-80 bg-white border-r border-secondary-200 flex flex-col">
-          <div className="p-4 border-b border-secondary-200">
-            <button
-              onClick={handleAddSlide}
-              className="w-full btn-primary flex items-center justify-center space-x-2"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Slide</span>
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            <DragDropSlideList
-              slides={currentPresentation.slides}
-              selectedSlideId={selectedSlideId}
-              onSelectSlide={setSelectedSlideId}
-              onDeleteSlide={handleDeleteSlide}
-              onReorderSlides={handleReorderSlides}
-            />
-          </div>
-        </div>
-
-        {/* Main Editor Area */}
-        <div className="flex-1 flex">
-          {isPreviewMode ? (
-            <div className="flex-1 flex items-center justify-center p-8">
-              {selectedSlide ? (
-                <SlidePreview slide={selectedSlide} />
-              ) : (
-                <div className="text-center text-secondary-500">
-                  <p>Select a slide to preview</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex-1 flex">
-              {/* Slide Editor */}
-              <div className="flex-1 p-8">
-                {selectedSlide ? (
-                  <SlideEditor
-                    slide={selectedSlide}
-                    onUpdateSlide={handleUpdateSlide}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-secondary-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Plus className="w-8 h-8 text-secondary-400" />
-                      </div>
-                      <h3 className="text-lg font-medium text-secondary-900 mb-2">
-                        No slide selected
-                      </h3>
-                      <p className="text-secondary-500 mb-4">
-                        Select a slide from the sidebar or add a new one
-                      </p>
-                      <button
-                        onClick={handleAddSlide}
-                        className="btn-primary"
-                      >
-                        Add Your First Slide
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Slide Preview */}
-              <div className="w-96 border-l border-secondary-200 p-6 bg-secondary-50">
-                <h3 className="text-sm font-medium text-secondary-700 mb-4">
-                  Preview
-                </h3>
-                {selectedSlide ? (
-                  <div className="transform scale-50 origin-top-left">
-                    <SlidePreview slide={selectedSlide} />
-                  </div>
-                ) : (
-                  <div className="w-full h-64 bg-white rounded-lg border-2 border-dashed border-secondary-300 flex items-center justify-center">
-                    <p className="text-secondary-400 text-sm">No slide selected</p>
-                  </div>
-                )}
-              </div>
+    <div
+      className="h-screen flex flex-col transition-all duration-700 overflow-hidden"
+      style={{
+        ...figmaWhiteBackground,
+        color: gradientThemes[currentTheme].color,
+      }}
+    >
+      {/* HEADER (Fixed) */}
+      <header className="flex items-center justify-between px-8 py-3 bg-white/40 backdrop-blur-md border-b border-gray-200 fixed top-0 left-0 right-0 z-40">
+        <h1 className="text-lg font-semibold">{selectedSlide?.title || "Presentation"}</h1>
+        <div className="flex items-center gap-4 relative">
+          <button
+            onClick={() => setShowThemeSelector(!showThemeSelector)}
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition"
+          >
+            🎨 Theme
+          </button>
+          {showThemeSelector && (
+            <div className="absolute right-0 mt-2 bg-white backdrop-blur-xl border border-gray-200 rounded-xl p-4 shadow-2xl z-50 w-72">
+              <ThemeSelector
+                selected={currentTheme}
+                onChange={(themeId) => {
+                  setCurrentTheme(themeId);
+                  setShowThemeSelector(false);
+                }}
+              />
             </div>
           )}
+          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition">
+            <Save size={16} /> {saving ? "Saving..." : "Save"}
+          </button>
+          <button onClick={() => toast("👀 Preview coming soon!")} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg transition">
+            <Eye size={16} /> Preview
+          </button>
+          <button onClick={handleExport} disabled={exporting} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-white transition">
+            <Download size={16} /> {exporting ? "Exporting..." : "Export"}
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* Export Modal */}
-      {currentPresentation && (
-        <ExportModal
-          isOpen={isExportModalOpen}
-          onClose={() => setIsExportModalOpen(false)}
-          presentation={currentPresentation}
-        />
-      )}
-
-      {/* Preview All Modal */}
-      {isAllPreviewOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="text-lg font-semibold">Preview All Slides</h3>
-              <button onClick={() => setIsAllPreviewOpen(false)} className="p-2 hover:bg-secondary-100 rounded">
-                <X className="w-5 h-5 text-secondary-600" />
-              </button>
-            </div>
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {currentPresentation.slides.map((s, i) => (
-                <div key={s.id} id={`slide-capture-${i}`} className="bg-secondary-50 rounded-lg p-4">
-                  <div className="mb-2 text-xs text-secondary-500">Slide {i + 1}</div>
-                  <div className="border rounded-lg overflow-hidden">
-                    <SlidePreview slide={s} />
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* MAIN LAYOUT */}
+      <div className="flex flex-1 pt-[60px] overflow-hidden">
+        {/* Sidebar (Fixed height, scrolls internally if needed) */}
+        <aside className="w-64 bg-white/60 backdrop-blur-md border-r border-gray-200 overflow-y-auto fixed top-[60px] bottom-0 left-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+            <h2 className="text-sm font-semibold">Slides</h2>
+            <button
+              onClick={handleAddSlide}
+              className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded flex items-center gap-1"
+            >
+              <Plus size={12} /> New
+            </button>
           </div>
-        </div>
-      )}
-    </div>
-  )
-}
+          {slides.map((slide) => (
+            <div
+              key={slide.id}
+              onClick={() => setSelectedSlide(slide)}
+              className={`px-4 py-3 text-sm cursor-pointer border-b border-gray-100 ${
+                selectedSlide?.id === slide.id ? "bg-gray-200/80" : "hover:bg-gray-100"
+              }`}
+            >
+              <h3 className="font-medium truncate">{slide.title}</h3>
+              <p className="text-xs opacity-70 truncate">{slide.content}</p>
+            </div>
+          ))}
+        </aside>
 
-export default EditorPage
+        {/* Center Scrollable Slides */}
+        <main className="flex-1 ml-64 overflow-y-auto p-10 bg-[#f9fafb] relative">
+          <div className="flex flex-col items-center gap-12 pb-24">
+            {slides.map((slide) => (
+              <motion.div
+                key={slide.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="w-full max-w-6xl aspect-video rounded-2xl shadow-xl flex overflow-hidden backdrop-blur-lg bg-white border border-gray-200"
+                style={{
+                  color: gradientThemes[currentTheme].color,
+                }}
+              >
+                {/* Text Section */}
+                <div
+                  className={`flex-1 flex flex-col justify-center px-10 py-8 text-left ${
+                    slide.layout === "right" ? "order-2" : "order-1"
+                  }`}
+                >
+                  <input
+                    value={slide.title}
+                    onChange={(e) => {
+                      const updated = slides.map((s) =>
+                        s.id === slide.id ? { ...s, title: e.target.value } : s
+                      );
+                      setSlides(updated);
+                    }}
+                    className="text-4xl font-bold mb-4 bg-transparent border-b border-gray-300 focus:outline-none"
+                  />
+                  <textarea
+                    value={slide.content}
+                    onChange={(e) => {
+                      const updated = slides.map((s) =>
+                        s.id === slide.id ? { ...s, content: e.target.value } : s
+                      );
+                      setSlides(updated);
+                    }}
+                    className="text-lg text-gray-700 leading-relaxed bg-transparent focus:outline-none resize-none h-40"
+                  />
+                </div>
+
+                {/* Image Section */}
+                {slide.imageUrl && (
+                  <div
+                    className={`flex-1 flex items-center justify-center bg-gray-50 ${
+                      slide.layout === "right" ? "order-1" : "order-2"
+                    }`}
+                  >
+                    <img
+                      src={slide.imageUrl}
+                      alt="Slide Visual"
+                      className="w-full h-full object-cover rounded-r-2xl"
+                    />
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Floating Toolbar (Fixed) */}
+          <div className="fixed right-4 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 bg-white/90 backdrop-blur-md p-2 rounded-xl border border-gray-300 shadow-lg z-50 scale-75">
+
+            {[ 
+              { icon: <Search size={20} />, action: () => toast('🔍 Coming soon') },
+              { icon: <Type size={20} />, action: () => setEditingTitle(true) },
+              { icon: <ImageIcon size={20} />, action: handleChangeImage },
+              { icon: <Plus size={20} />, action: handleAddSlide },
+              { icon: <BarChart2 size={20} />, badge: "NEW", action: handleAddChart },
+              { icon: <Layout size={20} />, action: handleChangeLayout },
+              { icon: <Sparkles size={20} />, action: handleEnhance },
+              { icon: <RefreshCcw size={20} />, action: () => window.location.reload() },
+            ].map((btn, i) => (
+              <button
+                key={i}
+                onClick={btn.action}
+                className="relative group p-3 rounded-2xl bg-gray-100 hover:bg-gray-200 transition-all hover:scale-110 text-gray-800"
+              >
+                {btn.icon}
+                {btn.badge && (
+                  <span className="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                    {btn.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+            <div className="mt-2 text-sm font-semibold text-gray-500">84%</div>
+            <button className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition">
+              <HelpCircle size={22} color="#fff" />
+            </button>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+
+};
+
+export default EditorPage;
