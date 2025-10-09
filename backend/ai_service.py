@@ -525,9 +525,10 @@ IMPORTANT: Return ONLY the JSON, no other text."""
     
     async def generate_image(self, prompt: str) -> str:
         result = await self._generate_hf_image(prompt)
-        if result:
-            return result
-        return await self._generate_pollinations_image(prompt)
+        if not result:
+            print("⚠️ Hugging Face image generation failed — using placeholder image instead.")
+            return self._get_placeholder_image(0)
+        return result
     
     async def generate_outline(self, content: str):
         result = await self._generate_with_comprehensive_prompt(
@@ -571,7 +572,7 @@ IMPORTANT: Return ONLY the JSON, no other text."""
     
             slides = []
             for section in raw_sections:
-                # 🧹 Skip garbage text or filler
+                #  Skip garbage text or filler
                 if any(bad in section.lower() for bad in [
                     "ai-generated", "section overview", "outline", "placeholder"
                 ]):
