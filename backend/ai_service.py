@@ -224,9 +224,22 @@ IMPORTANT: Return ONLY the JSON, no other text."""
             # Extract JSON
             json_match = re.search(r'\{.*\}', content, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
+                try:
+                    return json.loads(json_match.group())
+                except Exception:
+                    # Sometimes model returns nested JSON in a string
+                    inner_json_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
+                    if inner_json_match:
+                        slides_data = json.loads(inner_json_match.group())
+                        return {
+                            "title": f"{topic.title()} Presentation",
+                            "description": f"AI-parsed fallback for {topic}",
+                            "slides": slides_data
+                        }
+                    raise Exception("Invalid JSON after parsing")
             else:
                 raise Exception("No valid JSON in response")
+
                 
         except Exception as e:
             print(f"❌ Error in comprehensive prompt: {e}")
@@ -536,108 +549,230 @@ IMPORTANT: Return ONLY the JSON, no other text."""
         )
         return {"title": result["title"], "sections": result["slides"]}
     
-    async def generate_slides_from_outline(self, outline: dict):
-        return {"slides": outline.get("sections", [])}
-    
-    # ai_service.py (inside class AIHeavyPresentationService)
-
     async def summarize_document(self, document_content: str, filename: str, outline_only: bool = False):
         """
-        Summarize document content and optionally create presentation-style slides.
-        Removes junk text and normalizes titles for clarity.
+        Summarize document content and create clean presentation slides.
         """
         try:
-            system_prompt = (
-                "You are an expert summarizer and presentation creator. "
-                "Summarize this document into clean, concise slides. "
-                "Each slide should have a clear title and short bullet points. "
-                "Do not include phrases like 'AI-generated section overview', 'Outline', 'Slide 1', 'Section 1', or similar. "
-                "Only output meaningful slide titles and their content."
-            )
-    
-            user_prompt = f"Document content:\n{document_content[:8000]}"
-    
-            summary = await self.call_openrouter_api(
+            system_prompt = """You are a professional presentation creator. Your task is to convert document content into clean, well-structured presentation slides.
+
+    STRICT OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
+    {
+      "slides": [
+        {
+          "title": "Clear Slide Title Here",
+          "content": "Point 1: explanation\\nPoint 2: explanation\\nPoint 3: explanation"
+        }
+      ]
+    }
+
+    RULES:
+    1. Create 5-8 slides from the document
+    2. Each slide title must be clear and descriptive (not "Slide 1", "Section", etc.)
+    3. Content should be 3-5 concise bullet points
+    4. Use \\n for line breaks between points
+    5. NO markdown, NO special formatting, NO code blocks
+    6. Start each point with a dash or bullet
+    7. Keep content focused and scannable
+
+    Return ONLY the JSON object, nothing else."""
+
+            user_prompt = f"""Create presentation slides from this document:
+
+    {document_content[:6000]}
+
+    Remember: Return ONLY valid JSON with slides array. Each slide needs title and content fields."""
+
+            response = await self.call_openrouter_api(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt
             )
-    
-            if not summary or not summary.strip():
-                raise ValueError("Empty summary returned from model")
-    
-            # Split summary into sections
-            raw_sections = [s.strip() for s in summary.split("\n\n") if s.strip()]
-            if len(raw_sections) <= 1:
-                raw_sections = [s.strip() for s in summary.split("\n") if s.strip()]
-    
+
+            if not response or not response.strip():
+                raise ValueError("Empty response from AI")
+
+            # Clean the response
+            response = response.strip()
+
+            # Try to extract JSON from the response
+            try:
+                # Remove markdown code blocks if present
+                if "```json" in response:
+                    response = response.split("```json")[1].split("```")[0].strip()
+                elif "```" in response:
+                    response = response.split("```")[1].split("```")[0].strip()
+
+                # Parse JSON
+                data = json.loads(response)
+                raw_slides = data.get("slides", [])
+
+                if not raw_slides:
+                    raise ValueError("No slides in response")
+
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON parse error: {e}")
+                print(f"Response preview: {response[:500]}")
+                # Fallback: create slides from raw text
+                raw_slides = self._parse_fallback_format(response)
+
+            # Clean and format slides
             slides = []
-            for section in raw_sections:
-                #  Skip garbage text or filler
-                if any(bad in section.lower() for bad in [
-                    "ai-generated", "section overview", "outline", "placeholder"
-                ]):
-                    continue
-                
-                lines = [line.strip() for line in section.split("\n") if line.strip()]
-                if not lines:
-                    continue
-                
-                # Title heuristic: first line
-                first_line = lines[0]
-                content = "\n".join(lines[1:]).strip()
-    
-                # 🧠 Clean up title text
-                title = first_line
-                title = (
-                    title.replace("Slide", "")
-                    .replace("Section", "")
-                    .replace("Title", "")
-                    .replace(":", "")
-                    .strip()
-                )
-    
-                # Fallback: short or missing titles
-                if not title or len(title.split()) > 12:
-                    title = f"Slide {len(slides) + 1}"
-    
-                # Clean markdown dividers like ---
-                content = "\n".join(
-                    line for line in content.split("\n") if not line.strip().startswith("---")
-                ).strip()
-    
-                # Skip slides that are empty or nonsense
-                if len(content) < 5 and len(title) < 3:
+            for i, slide_data in enumerate(raw_slides[:8]):  # Limit to 8 slides
+                title = slide_data.get("title", f"Slide {i+1}").strip()
+                content = slide_data.get("content", "").strip()
+
+                # Skip junk titles
+                if any(bad in title.lower() for bad in ["slide:", "section:", "title:", "outline"]):
+                    title = title.split(":", 1)[-1].strip()
+
+                # Clean title
+                title = self._clean_text(title)
+                if not title or len(title) < 3:
+                    title = f"Key Point {i+1}"
+
+                # Clean content - handle various escape sequences
+                content = self._clean_content(content)
+
+                if len(content) < 10:
                     continue
                 
                 slides.append({
                     "type": "content",
                     "title": title,
-                    "content": content
+                    "content": content,
+                    "layout": "split"
                 })
-    
-            # Fallback if no slides found
+
+            # Ensure we have at least one slide
             if not slides:
                 slides = [{
                     "type": "content",
-                    "title": "Summary",
-                    "content": summary.strip()
+                    "title": f"Summary of {filename}",
+                    "content": self._create_basic_summary(document_content)
                 }]
-    
+
             return {
                 "title": f"Summary of {filename}",
-                "description": "Auto-generated summary and outline",
+                "description": "Document presentation",
                 "slides": slides,
                 "theme": "modern"
             }
-    
+
         except Exception as e:
-            print(f"❌ summarize_document failed: {e}")
+            print(f"❌ summarize_document error: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Emergency fallback
             return {
-                "title": "Error Summary",
-                "description": f"Failed to summarize: {str(e)}",
-                "slides": [{"title": "Error", "content": str(e)}],
+                "title": f"Summary of {filename}",
+                "description": "Auto-generated summary",
+                "slides": [{
+                    "type": "content",
+                    "title": "Document Overview",
+                    "content": self._create_basic_summary(document_content)
+                }],
                 "theme": "modern"
             }
+
+    def _clean_text(self, text: str) -> str:
+        """Clean text from escape sequences and formatting"""
+        if not text:
+            return ""
+
+        # Remove common escape sequences
+        text = text.replace("\\n", " ")
+        text = text.replace("\\N", " ")
+        text = text.replace("\\t", " ")
+        text = text.replace("\\r", " ")
+
+        # Remove markdown
+        text = text.replace("**", "")
+        text = text.replace("##", "")
+        text = text.replace("#", "")
+        text = text.replace("*", "")
+
+        # Remove extra whitespace
+        text = " ".join(text.split())
+
+        return text.strip()
+
+    def _clean_content(self, content: str) -> str:
+        """Clean and format slide content"""
+        if not content:
+            return ""
+
+        # Replace escape sequences with actual newlines
+        content = content.replace("\\n", "\n")
+        content = content.replace("\\N", "\n")
+        content = content.replace("\\t", " ")
+        content = content.replace("\\r", "")
+
+        # Split into lines and clean each
+        lines = [line.strip() for line in content.split("\n") if line.strip()]
+
+        # Format as bullet points
+        formatted_lines = []
+        for line in lines:
+            # Remove existing bullets/dashes
+            line = line.lstrip("•-*> ")
+
+            if line:
+                # Add bullet point
+                formatted_lines.append(f"• {line}")
+
+        return "\n".join(formatted_lines[:6])  # Max 6 points per slide
+
+    def _parse_fallback_format(self, text: str) -> list:
+        """Parse slides from non-JSON formatted text"""
+        slides = []
+
+        # Try to find slide markers
+        if "SLIDE:" in text.upper():
+            sections = text.upper().split("SLIDE:")
+            for section in sections[1:]:  # Skip first empty part
+                lines = [l.strip() for l in section.split("\n") if l.strip()]
+                if lines:
+                    title = lines[0]
+                    content = "\n".join(lines[1:])
+                    slides.append({"title": title, "content": content})
+        else:
+            # Split by double newlines
+            paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+            for para in paragraphs[:8]:
+                lines = para.split("\n")
+                title = lines[0] if lines else "Key Point"
+                content = "\n".join(lines[1:]) if len(lines) > 1 else para
+                slides.append({"title": title, "content": content})
+
+        return slides[:8]
+
+    def _create_basic_summary(self, document_content: str) -> str:
+        """Create a basic summary when AI fails"""
+        lines = document_content.split("\n")[:10]
+        summary_lines = []
+
+        for line in lines:
+            line = line.strip()
+            if line and len(line) > 20:
+                summary_lines.append(f"• {line[:100]}")
+                if len(summary_lines) >= 5:
+                    break
+                
+        return "\n".join(summary_lines) if summary_lines else "Document content overview"
+    async def generate_ai_text(self, prompt: str) -> str:
+        """
+        Simple helper for text-only AI generation.
+        Used by Enhance / Rewrite / Summarize / Expand / Tone routes.
+        """
+        try:
+            system_prompt = "You are an expert presentation assistant that helps improve and rephrase text."
+            result = await self.call_openrouter_api(system_prompt=system_prompt, user_prompt=prompt)
+            return result.strip()
+        except Exception as e:
+            print(f"❌ generate_ai_text failed: {e}")
+            return f"(AI error: {e})"
+
 
 
 # Alias for backward compatibility

@@ -10,7 +10,7 @@ const api = axios.create({
 });
 
 export const presentationAPI = {
-  // Generate presentation from prompt
+  // 🧩 Generate presentation from prompt
   generatePresentation: async (prompt, model) => {
     try {
       const response = await api.post("/generate-presentation", { prompt, model });
@@ -21,7 +21,7 @@ export const presentationAPI = {
     }
   },
 
-  // Save presentation
+  // 💾 Save presentation
   savePresentation: async (presentation) => {
     try {
       const response = await api.post("/save-presentation", presentation);
@@ -32,7 +32,7 @@ export const presentationAPI = {
     }
   },
 
-  // Get all presentations
+  // 📂 Get all presentations
   getPresentations: async () => {
     try {
       const response = await api.get("/presentations");
@@ -43,7 +43,7 @@ export const presentationAPI = {
     }
   },
 
-  // Health check
+  // 🩺 Health check
   healthCheck: async () => {
     try {
       const response = await api.get("/health");
@@ -54,7 +54,7 @@ export const presentationAPI = {
     }
   },
 
-  // Get available AI models
+  // 🤖 Get available AI models
   getAvailableModels: async () => {
     try {
       const response = await api.get("/models");
@@ -65,7 +65,7 @@ export const presentationAPI = {
     }
   },
 
-  // Generate image
+  // 🖼️ Generate image from prompt
   generateImage: async (prompt) => {
     try {
       const response = await api.post("/generate-image", { prompt });
@@ -76,7 +76,7 @@ export const presentationAPI = {
     }
   },
 
-  // Upload document
+  // 📄 Upload document
   uploadDocument: async (formData) => {
     try {
       const response = await api.post("/upload-document", formData, {
@@ -89,7 +89,7 @@ export const presentationAPI = {
     }
   },
 
-  // Ingest URL
+  // 🌐 Ingest URL
   ingestUrl: async (url) => {
     try {
       const response = await api.post("/ingest-url", { url });
@@ -100,7 +100,7 @@ export const presentationAPI = {
     }
   },
 
-  // Ingest pasted text
+  // 📝 Ingest pasted text
   ingestText: async (text, name) => {
     try {
       const response = await api.post("/ingest-text", { text, name });
@@ -111,7 +111,7 @@ export const presentationAPI = {
     }
   },
 
-  // ✅ Summarize document (outline-only by default)
+  // 🧾 Summarize document (outline-only by default)
   summarizeDocument: async (content, filename, outlineOnly = true) => {
     try {
       if (Array.isArray(content)) {
@@ -121,7 +121,7 @@ export const presentationAPI = {
       const response = await api.post("/summarize-document", {
         content,
         filename,
-        outline_only: outlineOnly, // 👈 key part — outline-only flag
+        outline_only: outlineOnly,
       });
 
       return response.data;
@@ -131,7 +131,7 @@ export const presentationAPI = {
     }
   },
 
-  // Generate outline (for text input only)
+  // 🧭 Generate outline (for text input only)
   generateOutline: async (content) => {
     try {
       const response = await api.post("/generate-outline", { content });
@@ -139,6 +139,61 @@ export const presentationAPI = {
     } catch (error) {
       console.error("Error generating outline:", error);
       throw new Error("Failed to generate outline");
+    }
+  },
+
+  // ✨ AI — Enhance Slide
+  enhanceSlide: async (prompt) => {
+    try {
+      const response = await api.post("/enhance-slide", { prompt });
+      return response.data;
+    } catch (error) {
+      console.error("Error enhancing slide:", error);
+      throw new Error("Failed to enhance slide");
+    }
+  },
+
+  // 📝 AI — Rewrite Slide
+  rewriteSlide: async (prompt) => {
+    try {
+      const response = await api.post("/rewrite-slide", { prompt });
+      return response.data;
+    } catch (error) {
+      console.error("Error rewriting slide:", error);
+      throw new Error("Failed to rewrite slide");
+    }
+  },
+
+  // 📈 AI — Expand Slide
+  expandSlide: async (prompt) => {
+    try {
+      const response = await api.post("/expand-slide", { prompt });
+      return response.data;
+    } catch (error) {
+      console.error("Error expanding slide:", error);
+      throw new Error("Failed to expand slide");
+    }
+  },
+
+  // 🪄 AI — Summarize Slide
+  summarizeSlide: async (prompt) => {
+    try {
+      const response = await api.post("/summarize-slide", { prompt });
+      return response.data;
+    } catch (error) {
+      console.error("Error summarizing slide:", error);
+      throw new Error("Failed to summarize slide");
+    }
+  },
+
+  // 🎨 AI — Change Tone (optional)
+  changeTone: async (prompt) => {
+    try {
+      const response = await api.post("/change-tone", { prompt });
+      return response.data;
+    } catch (error) {
+      console.error("Error changing tone:", error);
+      throw new Error("Failed to change tone");
     }
   },
 };

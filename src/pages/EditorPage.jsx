@@ -33,9 +33,12 @@ import {
   EyeOff,
   ChevronLeft,
   ChevronRight,
+  MoreVertical,
+  Palette,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
 } from "lucide-react";
-
-// Import themes from ThemeSelector to keep them in sync
 
 const EditorPage = () => {
   const location = useLocation();
@@ -62,8 +65,10 @@ const EditorPage = () => {
     underline: false,
     align: "left"
   });
+  const [slideMenuOpen, setSlideMenuOpen] = useState(null); // Track which slide's menu is open
 
   const theme = gradientThemes[currentTheme] || gradientThemes["classic-light"];
+  
   // Load theme
   useEffect(() => {
     const savedTheme = localStorage.getItem("presentationTheme");
@@ -86,21 +91,42 @@ const EditorPage = () => {
             setSelectedSlide(existing.slides?.[0] || null);
           }
         } else if (outline.length > 0) {
-          const formatted = outline.map((item, i) => ({
-            id: i + 1,
-            title: item.title || `Slide ${i + 1}`,
-            content: item.content || "Generated AI Slide Content",
-            imageUrl: item.imagePrompt?.startsWith("http")
-              ? item.imagePrompt
-              : `https://image.pollinations.ai/prompt/${encodeURIComponent(
-                  item.imagePrompt || item.title
-                )}`,
-            layout: item.layout || "split",
-            textAlign: "left",
-          }));
+          const formatted = outline.map((item, i) => {
+            let cleanContent = item.content || "Generated AI Slide Content";
+            
+            if (cleanContent.includes('"type"') || cleanContent.includes('"content"')) {
+              try {
+                const parsed = JSON.parse(cleanContent);
+                cleanContent = parsed.content || cleanContent;
+              } catch {
+                const contentMatch = cleanContent.match(/"content"\s*:\s*"([^"]+)"/);
+                if (contentMatch) {
+                  cleanContent = contentMatch[1];
+                }
+              }
+            }
+            
+            cleanContent = cleanContent
+              .replace(/\\n/g, '\n')
+              .replace(/\\"/g, '"')
+              .replace(/\\t/g, '\t')
+              .trim();
+            
+            return {
+              id: item.id || i + 1,
+              title: item.title || `Slide ${i + 1}`,
+              content: cleanContent,
+              imageUrl: item.imageUrl || (item.imagePrompt?.startsWith("http")
+                ? item.imagePrompt
+                : `https://image.pollinations.ai/prompt/${encodeURIComponent(
+                    item.imagePrompt || item.title
+                  )}`),
+              layout: item.layout || "split",
+              textAlign: item.textAlign || "left",
+            };
+          });
           setSlides(formatted);
         }
-      
       } catch (err) {
         console.error(err);
         toast.error("Failed to load presentation");
@@ -108,6 +134,7 @@ const EditorPage = () => {
     };
     loadPresentation();
   }, [outline, presentationId]);
+
   useEffect(() => {
     if (slides.length > 0 && !selectedSlide) {
       setSelectedSlide(slides[0]);
@@ -234,49 +261,71 @@ const EditorPage = () => {
   };
 
   // Duplicate slide
-  const handleDuplicateSlide = () => {
-    if (!selectedSlide) return;
+  const handleDuplicateSlide = (slideId = null) => {
+    const slideToDuplicate = slideId 
+      ? slides.find(s => s.id === slideId)
+      : selectedSlide;
+    
+    if (!slideToDuplicate) return;
     
     const duplicatedSlide = {
-      ...selectedSlide,
+      ...slideToDuplicate,
       id: Date.now(),
-      title: `${selectedSlide.title} (Copy)`,
+      title: `${slideToDuplicate.title} (Copy)`,
     };
+    
+    const slideIndex = slides.findIndex(s => s.id === slideToDuplicate.id);
     const newSlides = [...slides];
-    newSlides.splice(selectedSlideIndex + 1, 0, duplicatedSlide);
+    newSlides.splice(slideIndex + 1, 0, duplicatedSlide);
     setSlides(newSlides);
     setSelectedSlide(duplicatedSlide);
-    setSelectedSlideIndex(selectedSlideIndex + 1);
+    setSelectedSlideIndex(slideIndex + 1);
     toast.success("📋 Slide duplicated!");
   };
 
   // Delete slide
-  const handleDeleteSlide = () => {
-    if (!selectedSlide || slides.length === 1) {
+  const handleDeleteSlide = (slideId = null) => {
+    if (slides.length === 1) {
       toast.error("Cannot delete the last slide!");
       return;
     }
     
-    const newSlides = slides.filter(s => s.id !== selectedSlide.id);
+    const slideToDelete = slideId 
+      ? slides.find(s => s.id === slideId)
+      : selectedSlide;
+    
+    if (!slideToDelete) return;
+    
+    const newSlides = slides.filter(s => s.id !== slideToDelete.id);
     setSlides(newSlides);
-    const newIndex = Math.min(selectedSlideIndex, newSlides.length - 1);
+    const slideIndex = slides.findIndex(s => s.id === slideToDelete.id);
+    const newIndex = Math.min(slideIndex, newSlides.length - 1);
     setSelectedSlide(newSlides[newIndex]);
     setSelectedSlideIndex(newIndex);
     toast.success("🗑️ Slide deleted!");
   };
 
   // Change layout
-  const handleChangeLayout = () => {
-    if (!selectedSlide) return;
+  const handleChangeLayout = (slideId = null) => {
+    const slideToChange = slideId 
+      ? slides.find(s => s.id === slideId)
+      : selectedSlide;
+    
+    if (!slideToChange) return;
+    
     const layouts = ["split", "full-image", "full-text", "centered"];
-    const currentIndex = layouts.indexOf(selectedSlide.layout);
+    const currentIndex = layouts.indexOf(slideToChange.layout);
     const nextLayout = layouts[(currentIndex + 1) % layouts.length];
     
     const updatedSlides = slides.map((s) =>
-      s.id === selectedSlide.id ? { ...s, layout: nextLayout } : s
+      s.id === slideToChange.id ? { ...s, layout: nextLayout } : s
     );
     setSlides(updatedSlides);
-    setSelectedSlide({ ...selectedSlide, layout: nextLayout });
+    
+    if (slideToChange.id === selectedSlide?.id) {
+      setSelectedSlide({ ...slideToChange, layout: nextLayout });
+    }
+    
     toast.success(`📐 Layout changed to ${nextLayout}`);
   };
 
@@ -318,23 +367,100 @@ const EditorPage = () => {
   };
 
   // AI Enhancement
+  // ✅ AI Enhancement — now connected to backend
   const handleEnhance = async () => {
     if (!selectedSlide) return;
-    
+
     const loadingToast = toast.loading("✨ Enhancing content with AI...");
-    
-    // Simulate AI enhancement
-    setTimeout(() => {
-      const enhancedContent = selectedSlide.content + "\n\n✨ Enhanced with AI insights and professional formatting.";
+
+    try {
+      // 🔗 Call FastAPI backend
+      const result = await presentationAPI.enhanceSlide(selectedSlide.content);
+      const enhancedContent = result.enhanced || selectedSlide.content;
+
+      // 🧩 Update slide state
       const updatedSlides = slides.map((s) =>
         s.id === selectedSlide.id ? { ...s, content: enhancedContent } : s
       );
       setSlides(updatedSlides);
       setSelectedSlide({ ...selectedSlide, content: enhancedContent });
-      toast.dismiss(loadingToast);
+
       toast.success("✨ Content enhanced!");
-    }, 1500);
+    } catch (error) {
+      console.error("Enhancement failed:", error);
+      toast.error("❌ Failed to enhance content");
+    } finally {
+      toast.dismiss(loadingToast);
+    }
   };
+
+  // ✏️ Rewrite Slide
+  const handleRewrite = async () => {
+    if (!selectedSlide) return;
+    const loadingToast = toast.loading("✏️ Rewriting slide with AI...");
+    try {
+      const result = await presentationAPI.rewriteSlide(selectedSlide.content);
+      const rewritten = result.rewritten || selectedSlide.content;
+
+      const updatedSlides = slides.map((s) =>
+        s.id === selectedSlide.id ? { ...s, content: rewritten } : s
+      );
+      setSlides(updatedSlides);
+      setSelectedSlide({ ...selectedSlide, content: rewritten });
+      toast.success("✏️ Slide rewritten!");
+    } catch (error) {
+      console.error(error);
+      toast.error("❌ Rewrite failed");
+    } finally {
+      toast.dismiss(loadingToast);
+    }
+  };
+
+  // 📈 Expand Content
+  const handleExpand = async () => {
+    if (!selectedSlide) return;
+    const loadingToast = toast.loading("📈 Expanding content with AI...");
+    try {
+      const result = await presentationAPI.expandSlide(selectedSlide.content);
+      const expanded = result.expanded || selectedSlide.content;
+
+      const updatedSlides = slides.map((s) =>
+        s.id === selectedSlide.id ? { ...s, content: expanded } : s
+      );
+      setSlides(updatedSlides);
+      setSelectedSlide({ ...selectedSlide, content: expanded });
+      toast.success("📈 Content expanded!");
+    } catch (error) {
+      console.error(error);
+      toast.error("❌ Expansion failed");
+    } finally {
+      toast.dismiss(loadingToast);
+    }
+  };
+
+  // 🪄 Summarize Slide
+  const handleSummarize = async () => {
+    if (!selectedSlide) return;
+    const loadingToast = toast.loading("🪄 Summarizing slide...");
+    try {
+      const result = await presentationAPI.summarizeSlide(selectedSlide.content);
+      const summary = result.summary || selectedSlide.content;
+
+      const updatedSlides = slides.map((s) =>
+        s.id === selectedSlide.id ? { ...s, content: summary } : s
+      );
+      setSlides(updatedSlides);
+      setSelectedSlide({ ...selectedSlide, content: summary });
+      toast.success("🪄 Summary generated!");
+    } catch (error) {
+      console.error(error);
+      toast.error("❌ Summarization failed");
+    } finally {
+      toast.dismiss(loadingToast);
+    }
+  };
+
+
 
   // Add chart
   const handleAddChart = () => {
@@ -387,7 +513,7 @@ const EditorPage = () => {
     const size = isPresent ? "text-5xl" : "text-3xl";
     const contentSize = isPresent ? "text-2xl" : "text-base";
     const padding = isPresent ? "p-16" : "p-8";
-    const fontFamily = theme.font; // Get font from theme
+    const fontFamily = theme.font;
   
     switch (slide.layout) {
       case "full-image":
@@ -443,6 +569,139 @@ const EditorPage = () => {
         );
     }
   };
+
+  // Image with hover options component
+  const ImageWithOptions = ({ src, alt }) => {
+    const [isHovered, setIsHovered] = useState(false);
+    const [showAIMenu, setShowAIMenu] = useState(false);
+  
+    return (
+      <div 
+        className="relative w-full h-full group"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => {
+          setIsHovered(false);
+          setShowAIMenu(false);
+        }}
+      >
+        <img src={src} alt={alt} className="w-full h-full object-cover" />
+        
+        {/* Image Options Toolbar (White Toolbar) */}
+        {isHovered && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/95 backdrop-blur-sm px-3 py-2 rounded-full shadow-lg z-10 animate-in fade-in duration-200">
+            {/* Upload */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 hover:bg-gray-100 rounded-full transition"
+              title="Upload image"
+            >
+              <Download size={16} className="text-gray-700" />
+            </button>
+            
+            {/* Refresh / Regenerate */}
+            <button
+              onClick={handleChangeImage}
+              className="p-2 hover:bg-gray-100 rounded-full transition"
+              title="Refresh image"
+            >
+              <RotateCw size={16} className="text-gray-700" />
+            </button>
+            
+            {/* Zoom in */}
+            <button
+              className="p-2 hover:bg-gray-100 rounded-full transition"
+              title="Zoom in"
+            >
+              <ZoomIn size={16} className="text-gray-700" />
+            </button>
+            
+            {/* Zoom out */}
+            <button
+              className="p-2 hover:bg-gray-100 rounded-full transition"
+              title="Zoom out"
+            >
+              <ZoomOut size={16} className="text-gray-700" />
+            </button>
+            
+            {/* Fit to view */}
+            <button
+              className="p-2 hover:bg-gray-100 rounded-full transition"
+              title="Fit to view"
+            >
+              <Maximize2 size={16} className="text-gray-700" />
+            </button>
+  
+            {/* ✨ Ask AI */}
+            <div className="relative">
+              <button
+                onClick={() => setShowAIMenu(!showAIMenu)}
+                className="p-2 hover:bg-gray-100 rounded-full transition"
+                title="Ask AI"
+              >
+                <Sparkles size={16} className="text-purple-600" />
+              </button>
+  
+              {/* Ask AI Dropdown */}
+              {showAIMenu && (
+                  <div className="absolute top-12 right-0 bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-2 w-52">
+                    <button
+                      onClick={() => {
+                        handleEnhance();
+                        setShowAIMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <Sparkles size={14} className="text-purple-600" /> Enhance Content
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleRewrite();
+                        setShowAIMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <Type size={14} className="text-gray-700" /> Rewrite Text
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleExpand();
+                        setShowAIMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <BarChart2 size={14} className="text-green-600" /> Expand Content
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleSummarize();
+                        setShowAIMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <AlignCenter size={14} className="text-orange-500" /> Summarize Slide
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        handleChangeTone();
+                        setShowAIMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <Palette size={14} className="text-pink-500" /> Change Tone
+                    </button>
+                  </div>
+                )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+  
 
   // Present Mode Component
   if (presentMode) {
@@ -690,7 +949,7 @@ const EditorPage = () => {
                       setSelectedSlide(slide);
                       setSelectedSlideIndex(index);
                     }}
-                    className={`rounded-lg overflow-hidden cursor-pointer transition-all ${
+                    className={`relative rounded-lg overflow-hidden cursor-pointer transition-all group ${
                       selectedSlide?.id === slide.id
                         ? "ring-2 ring-blue-500 shadow-md"
                         : "ring-1 ring-gray-200 hover:ring-gray-400 hover:shadow-sm"
@@ -702,6 +961,71 @@ const EditorPage = () => {
                           <span className="absolute top-2 left-2 bg-gray-700 text-white text-xs font-bold rounded w-6 h-6 flex items-center justify-center z-10 shadow">
                             {index + 1}
                           </span>
+                          
+                          {/* Slide Options Bar (Purple Circle - appears on hover) */}
+                          <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSlide(slide.id);
+                              }}
+                              className="p-1.5 bg-white/90 hover:bg-red-50 rounded shadow-sm transition"
+                              title="Delete slide"
+                            >
+                              <Trash2 size={14} className="text-red-600" />
+                            </button>
+                            
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleChangeLayout(slide.id);
+                              }}
+                              className="p-1.5 bg-white/90 hover:bg-blue-50 rounded shadow-sm transition"
+                              title="Card styling"
+                            >
+                              <Palette size={14} className="text-blue-600" />
+                            </button>
+                            
+                            <div className="relative">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSlideMenuOpen(slideMenuOpen === slide.id ? null : slide.id);
+                                }}
+                                className="p-1.5 bg-white/90 hover:bg-gray-100 rounded shadow-sm transition"
+                                title="More options"
+                              >
+                                <MoreVertical size={14} className="text-gray-700" />
+                              </button>
+                              
+                              {/* Dropdown Menu */}
+                              {slideMenuOpen === slide.id && (
+                                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 w-40 overflow-hidden">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDuplicateSlide(slide.id);
+                                      setSlideMenuOpen(null);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-xs hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <Copy size={12} /> Duplicate
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleChangeLayout(slide.id);
+                                      setSlideMenuOpen(null);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-xs hover:bg-gray-50 flex items-center gap-2"
+                                  >
+                                    <Layout size={12} /> Change Layout
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
                           {slide.imageUrl ? (
                             <img src={slide.imageUrl} alt={slide.title} className="w-full h-32 object-cover" />
                           ) : (
@@ -723,6 +1047,30 @@ const EditorPage = () => {
                         <div className="flex-1 min-w-0">
                           <h3 className="text-xs font-semibold text-gray-800 truncate">{slide.title}</h3>
                           <p className="text-[11px] text-gray-500 truncate mt-0.5">{slide.content}</p>
+                        </div>
+                        
+                        {/* List view options */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSlide(slide.id);
+                            }}
+                            className="p-1 hover:bg-red-50 rounded transition"
+                            title="Delete"
+                          >
+                            <Trash2 size={12} className="text-red-600" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicateSlide(slide.id);
+                            }}
+                            className="p-1 hover:bg-blue-50 rounded transition"
+                            title="Duplicate"
+                          >
+                            <Copy size={12} className="text-blue-600" />
+                          </button>
                         </div>
                       </div>
                     )}
@@ -779,7 +1127,7 @@ const EditorPage = () => {
                     <div className="w-full h-full flex" style={{ fontFamily: theme.font }}>
                       {slide.layout !== "full-text" && slide.imageUrl && (
                         <div className={`${slide.layout === "full-image" ? "w-full" : "flex-1"} relative`}>
-                          <img src={slide.imageUrl} alt={slide.title} className="w-full h-full object-cover" />
+                          <ImageWithOptions src={slide.imageUrl} alt={slide.title} />
                         </div>
                       )}
                       <div className={`${slide.layout === "full-image" ? "absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" : "flex-1"} flex flex-col justify-center px-12 py-10`}>
@@ -807,42 +1155,23 @@ const EditorPage = () => {
                   ) : (
                     renderSlideContent(slide, false)
                   )}
-
-                  {/* Slide number indicator */}
-                  {/* <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-sm text-white text-xs font-bold rounded-full w-8 h-8 flex items-center justify-center">
-                    {index + 1}
-                  </div> */}
                 </motion.div>
               ))
             )}
           </div>
 
+          {/* Hidden file input for image upload */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            className="hidden"
+          />
+
           {/* Floating Toolbar */}
           {selectedSlide && (
             <div className="fixed right-6 top-1/2 -translate-y-1/2 flex flex-col gap-2 bg-white border border-gray-200 p-2 rounded-xl shadow-lg z-50">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                title="Upload Image"
-                className="p-2.5 rounded-lg bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-800 transition-all"
-              >
-                <ImageIcon size={18} />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
-
-              <button
-                onClick={handleChangeImage}
-                title="Generate New Image"
-                className="p-2.5 rounded-lg bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-800 transition-all"
-              >
-                <RefreshCcw size={18} />
-              </button>
-
               <button
                 onClick={handleAddSlide}
                 title="Add Slide"
@@ -860,7 +1189,7 @@ const EditorPage = () => {
               </button>
 
               <button
-                onClick={handleChangeLayout}
+                onClick={() => handleChangeLayout()}
                 title="Change Layout"
                 className="p-2.5 rounded-lg bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-800 transition-all"
               >
@@ -910,7 +1239,7 @@ const EditorPage = () => {
               </button>
 
               <button
-                onClick={handleDuplicateSlide}
+                onClick={() => handleDuplicateSlide()}
                 title="Duplicate Slide"
                 className="p-2.5 rounded-lg bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-800 transition-all"
               >
@@ -918,7 +1247,7 @@ const EditorPage = () => {
               </button>
 
               <button
-                onClick={handleDeleteSlide}
+                onClick={() => handleDeleteSlide()}
                 title="Delete Slide"
                 className="p-2.5 rounded-lg bg-white hover:bg-red-50 border border-gray-200 text-gray-600 hover:text-red-600 transition-all"
               >

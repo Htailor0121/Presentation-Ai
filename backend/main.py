@@ -13,6 +13,7 @@ from ai_service import PresentaionAi
 import document_processor
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 
 class UrlIngestRequest(BaseModel):
     url: str
@@ -44,13 +45,15 @@ app.add_middleware(
 
 # Pydantic models
 class SlideRequest(BaseModel):
-    type: str
-    title: str
-    content: str
-    backgroundColor: str = "#ffffff"
-    textColor: str = "#1f2937"
-    layout: str = "left"
+    prompt: str
+    type: Optional[str] = None
+    title: Optional[str] = None
+    content: Optional[str] = None
+    backgroundColor: Optional[str] = "#ffffff"
+    textColor: Optional[str] = "#1f2937"
+    layout: Optional[str] = "left"
     imageUrl: Optional[str] = None
+
 
 class PresentationRequest(BaseModel):
     title: str
@@ -416,8 +419,7 @@ async def generate_slides(req: OutlineToSlidesRequest):
 @app.post("/api/summarize-document")
 async def summarize_document(request: dict):
     """
-    Create a presentation from document content or generate an outline only.
-    Use `outline_only: true` to skip slide image generation for faster outline preview.
+    Create a presentation from document content.
     """
     try:
         document_content = request.get("content")
@@ -427,9 +429,15 @@ async def summarize_document(request: dict):
         if not document_content:
             raise HTTPException(status_code=400, detail="Document content is required")
 
+        print(f"📄 Processing document: {filename} (outline_only: {outline_only})")
+
+        # Get AI summary
         ai_response = await ai_service.summarize_document(document_content, filename, outline_only)
 
-        # ✅ Outline-only mode: no image generation
+        if not ai_response or not ai_response.get("slides"):
+            raise HTTPException(status_code=500, detail="Failed to generate slides from document")
+
+        # Outline-only mode: return quickly without images
         if outline_only:
             return {
                 "title": ai_response.get("title", "Document Summary"),
@@ -437,41 +445,67 @@ async def summarize_document(request: dict):
                 "outline": ai_response.get("slides", []),
             }
 
-        # 🖼️ Full mode (for later: when user clicks Generate Slides)
+        # Full mode: add images to each slide
         slides = []
-        for slide_data in ai_response.get("slides", []):
+        for idx, slide_data in enumerate(ai_response.get("slides", [])):
+            print(f"  📝 Processing slide {idx+1}: {slide_data.get('title', 'Untitled')[:50]}")
+            
+            # Get or generate image
             image_url = slide_data.get("imageUrl")
-
+            
             if not image_url:
-                image_prompt = slide_data.get("imagePrompt")
-                if not image_prompt:
-                    title = slide_data.get("title", "")
-                    content = slide_data.get("content", "")
-                    image_prompt = f"Create a presentation-ready visual for: {title}. {content}. Clean, modern, professional."
+                # Create image prompt from slide content
+                title = slide_data.get("title", "")
+                content = slide_data.get("content", "")[:200]  # First 200 chars
+                
+                # Create a focused image prompt
+                image_prompt = f"Professional presentation slide illustration for: {title}. Modern, clean, high quality, 4k"
+                
                 try:
-                    gen = await ai_service.generate_image(image_prompt)
-                    image_url = gen or "https://images.unsplash.com/photo-1557804506-669a67965ba0"
-                except Exception:
-                    image_url = "https://images.unsplash.com/photo-1557804506-669a67965ba0"
-
+                    print(f"    🎨 Generating image...")
+                    image_url = await ai_service.generate_image(image_prompt)
+                    if not image_url:
+                        # Use themed placeholder
+                        image_url = f"https://source.unsplash.com/1200x800/?{title.replace(' ', ',')}"
+                    print(f"    ✅ Image ready")
+                except Exception as img_error:
+                    print(f"    ⚠️ Image generation failed: {img_error}")
+                    image_url = f"https://source.unsplash.com/1200x800/?presentation,{idx}"
+            
+            # Build clean slide object
             slide = {
+                "id": slide_data.get("id", f"slide_{idx}_{int(datetime.now().timestamp())}"),
                 "type": slide_data.get("type", "content"),
-                "title": slide_data.get("title", ""),
+                "title": slide_data.get("title", f"Slide {idx+1}"),
                 "content": slide_data.get("content", ""),
                 "imageUrl": image_url,
+                "layout": slide_data.get("layout", "split"),
+                "textAlign": slide_data.get("textAlign", "left"),
+                "backgroundColor": slide_data.get("backgroundColor", "#ffffff"),
+                "textColor": slide_data.get("textColor", "#1f2937")
             }
+            
             slides.append(slide)
+
+        if not slides:
+            raise HTTPException(status_code=500, detail="No slides were generated")
+
+        print(f"✅ Generated {len(slides)} slides successfully")
 
         return {
             "title": ai_response.get("title", "Document Summary"),
-            "description": ai_response.get("description", f"Presentation created from {filename}"),
+            "description": ai_response.get("description", f"Presentation from {filename}"),
             "slides": slides,
             "theme": ai_response.get("theme", "modern"),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error in summarize_document endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to summarize document: {str(e)}")
+        print(f"❌ Error in summarize_document: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
 
 # New Gamma-style endpoints
 @app.post("/api/generate-slide")
@@ -492,23 +526,6 @@ async def generate_slide(request: GenerateSlideRequest):
         print(f"Error in generate_slide endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate slide: {str(e)}")
 
-@app.post("/api/enhance-slide")
-async def enhance_slide(request: EnhanceSlideRequest):
-    """Enhance an existing slide with AI (Gamma-style sparkle feature)"""
-    try:
-        if not request.slide:
-            raise HTTPException(status_code=400, detail="Slide data is required")
-        
-        enhanced_slide = await ai_service.enhance_slide_with_ai(
-            request.slide, 
-            request.enhancement_type, 
-            request.model
-        )
-        return enhanced_slide
-        
-    except Exception as e:
-        print(f"Error in enhance_slide endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to enhance slide: {str(e)}")
 
 @app.get("/api/themes")
 async def get_themes():
@@ -552,6 +569,75 @@ async def create_theme(request: CreateThemeRequest):
     except Exception as e:
         print(f"Error creating theme: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create theme: {str(e)}")
+
+@app.post("/api/enhance-slide")
+async def enhance_slide(data: SlideRequest):
+    try:
+        result = await ai_service.generate_ai_text(
+            f"Enhance and expand this slide content professionally:\n\n{data.prompt}"
+        )
+        return {"enhanced": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/rewrite-slide")
+async def rewrite_slide(data: SlideRequest):
+    try:
+        result = await ai_service.generate_ai_text(
+            f"Rewrite this slide with better flow and clarity:\n\n{data.prompt}"
+        )
+        return {"rewritten": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/summarize-slide")
+async def summarize_slide(data: SlideRequest):
+    try:
+        result = await ai_service.generate_ai_text(
+            f"Summarize this slide in a concise and clear way:\n\n{data.prompt}"
+        )
+
+        #  Clean out model instruction tags if present
+        cleaned = (
+            result.replace("<s>", "")
+                  .replace("</s>", "")
+                  .replace("[B_INST]", "")
+                  .replace("[/B_INST]", "")
+                  .strip()
+        )
+
+        return {"summary": cleaned}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/expand-slide")
+async def expand_slide(data: SlideRequest):
+    try:
+        result = await ai_service.generate_ai_text(
+            f"Expand this slide by adding more details and examples:\n\n{data.prompt}"
+        )
+        return {"expanded": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# @app.post("/api/change-tone-slide")
+# async def change_tone_slide(data: SlideRequest):
+#     try:
+#         result = await ai_service.generate_ai_text(
+#             f"Rewrite this slide with a more friendly and engaging tone:\n\n{data.prompt}"
+#         )
+#         return {"tone_changed": result}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/change-tone")
+async def change_tone(data: SlideRequest):
+    try:
+        result = await ai_service.generate_ai_text(f"Rewrite this slide with a more friendly and engaging tone:\n\n{data.prompt}")
+        return {"tone_changed": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Serve static files in production
 if os.path.exists("dist"):
