@@ -136,7 +136,7 @@ const SlideTemplates = ({ onSelectTemplate }) => {
     },
     {
       name: 'Process Flow',
-      preview: '🔄',
+      preview: '',
       template: {
         type: 'content',
         title: 'Process Overview',

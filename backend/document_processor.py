@@ -118,7 +118,7 @@ async def process_document(path: str, filename: str) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        print(f"❌ Error processing {filename}: {e}")
+        print(f" Error processing {filename}: {e}")
         return {"success": False, "error": str(e), "filename": filename, "content": ""}
 
 
@@ -142,7 +142,7 @@ def extract_text_from_docx(path: str) -> str:
             result = mammoth.extract_raw_text(f)
         return result.value or ""
     except Exception as e:
-        print(f"⚠️ mammoth failed: {e} — falling back to basic read()")
+        print(f" mammoth failed: {e} — falling back to basic read()")
         try:
             # Fallback: attempt plain text extraction
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
