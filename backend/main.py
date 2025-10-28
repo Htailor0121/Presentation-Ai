@@ -68,6 +68,7 @@ class SlideRequest(BaseModel):
     textColor: Optional[str] = "#1f2937"
     layout: Optional[str] = "left"
     imageUrl: Optional[str] = None
+    chartUrl: Optional[str] = None 
 
 
 class PresentationRequest(BaseModel):
@@ -145,16 +146,16 @@ async def generate_presentation_from_prompt(
         
         # Convert to frontend format
         slides = []
-        # NEW CODE - USE THIS ✅
+        # NEW CODE - USE THIS 
         for slide_data in ai_response.get("slides", []):
             if "id" not in slide_data or not slide_data["id"]:
                 slide_data["id"] = f"slide_{uuid.uuid4()}"
     
-    # ✅ FIX: Check if slide has a chart
+    #  FIX: Check if slide has a chart
             has_chart = slide_data.get("chartData", {}).get("needed", False)
             image_url = slide_data.get("imageUrl", "")
     
-    # ✅ Only generate new image if NO chart AND NO existing image
+    #  Only generate new image if NO chart AND NO existing image
             if not has_chart and not image_url:
                 image_prompt = slide_data.get("imagePrompt")
                 if not image_prompt:
@@ -169,7 +170,7 @@ async def generate_presentation_from_prompt(
                 except Exception:
                     image_url = "https://source.unsplash.com/1200x800/?presentation,professional"
             elif has_chart:
-        # ✅ Chart slides don't need images
+        #  Chart slides don't need images
                 image_url = ""
     
             slide = SlideRequest(
@@ -179,7 +180,8 @@ async def generate_presentation_from_prompt(
                 backgroundColor=slide_data.get("backgroundColor", "#ffffff"),
                 textColor=slide_data.get("textColor", "#1f2937"),
                 layout=slide_data.get("layout", "left"),
-                imageUrl=image_url
+                imageUrl=image_url,
+                chartUrl=slide_data.get("chartUrl", "")
             )
             slides.append(slide)
         
@@ -625,6 +627,7 @@ async def summarize_document(request: dict):
                     "title": slide_data.get("title", f"Slide {idx+1}"),
                     "content": slide_data.get("content", ""),
                     "imageUrl": image_url,
+                    "chartUrl": slide_data.get("chartUrl", ""),
                     "layout": slide_data.get("layout", "split"),
                     "textAlign": slide_data.get("textAlign", "left"),
                     "backgroundColor": slide_data.get("backgroundColor", "#ffffff"),

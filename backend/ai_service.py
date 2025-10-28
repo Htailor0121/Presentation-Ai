@@ -2,6 +2,7 @@ import os
 import json
 import httpx
 import re
+import time
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 from theme_manager import theme_manager
@@ -26,7 +27,7 @@ class AIHeavyPresentationService:
         
         # Hugging Face Inference API
         self.hf_api_key = os.getenv("HUGGINGFACE_API_KEY", "")
-        self.hf_api_url = "https://api-inference.huggingface.co/models/"
+        self.hf_api_url = "https://router.huggingface.co/hf-inference/models/"
         
         # Free image generation models
         self.hf_image_models = [
@@ -43,6 +44,440 @@ class AIHeavyPresentationService:
         
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY not found")
+    
+    # Add this method to your AIHeavyPresentationService class in ai_service.py
+    # Insert it after the __init__ method, around line 60
+
+    async def generate_presentation_gamma_style(
+        self,
+        topic: str,
+        theme: str,
+        num_slides: int,
+        model: str,
+        audience: str,
+        purpose: str
+    ) -> Dict[str, Any]:
+        """🎯 GAMMA-LEVEL: Generate presentation with advanced layouts and design"""
+    
+        num_slides = max(8, min(15, num_slides))
+    
+        strategy_map = {
+            "inform": "educate the audience with clear, factual information",
+            "persuade": "convince the audience to take action or change perspective",
+            "inspire": "motivate and energize the audience",
+            "educate": "teach the audience new skills or concepts",
+            "sell": "demonstrate value and drive purchasing decisions"
+        }
+    
+        strategy = strategy_map.get(purpose.lower(), "inform and engage the audience")
+    
+        system_prompt = """You are an elite presentation architect specializing in visual storytelling and modern design systems. You've designed award-winning decks for companies like Airbnb, Stripe, and Notion.
+
+CORE MASTERY:
+- Visual hierarchy and cognitive load optimization
+- Modern UI/UX design patterns and component systems
+- Data storytelling with sophisticated visualizations
+- Brand identity and design systems
+- Persuasive psychology and narrative architecture
+- Accessibility and inclusive design
+
+YOUR MISSION: Create presentations that are visually stunning, emotionally resonant, and strategically effective."""
+
+        user_prompt = f"""Create a visually sophisticated presentation with EXACTLY {num_slides} slides.
+
+=== STRATEGIC FOUNDATION ===
+Topic: {topic}
+Audience: {audience}
+Goal: {strategy}
+Theme: {theme}
+
+STRATEGIC ANALYSIS (Think deeply before generating):
+1. Emotional Journey: What should the audience FEEL at each stage?
+2. Cognitive Load: How do we make complex ideas effortless?
+3. Visual Metaphors: What imagery reinforces the core message?
+4. Narrative Arc: What's the story structure? (Hero's journey? Problem-solution? Before-after?)
+5. Key Moments: Which 2-3 slides should be "wow" moments?
+
+=== DESIGN SYSTEM ===
+
+COLOR PSYCHOLOGY:
+- {theme} theme drives palette selection
+- Use 60-30-10 rule (dominant, secondary, accent)
+- Gradients for depth and modernity
+- Contrast for accessibility (WCAG AA minimum)
+
+TYPOGRAPHY HIERARCHY:
+- Headlines: Bold, impactful (48-72px equivalent)
+- Subheads: Medium weight (24-32px)
+- Body: Regular (16-20px)
+- Captions: Light (12-14px)
+
+LAYOUT PRINCIPLES:
+- Asymmetry for visual interest
+- White space as a design element (40-60% of slide)
+- F-pattern and Z-pattern for eye flow
+- Golden ratio for proportions where appropriate
+
+=== ADVANCED LAYOUT TYPES ===
+
+Choose strategically from these 12 layouts:
+
+1. **hero**: Full-bleed impact
+   - Large headline + minimal text
+   - Dramatic background image/gradient
+   - Best for: Opening, section breaks, emotional moments
+
+2. **split_visual**: Balanced content + visual
+   - 50/50 or 60/40 split
+   - Text left, visual right (or inverse)
+   - Best for: Explaining concepts with visuals
+
+3. **card_grid**: Multiple concepts
+   - 2-4 cards with icons/images
+   - Equal visual weight
+   - Best for: Features, benefits, frameworks
+
+4. **data_focus**: Chart dominates
+   - Large visualization (70% of space)
+   - Minimal supporting text
+   - Best for: Key insights, trends, comparisons
+
+5. **quote_statement**: Impactful message
+   - Large quote/statement (center or offset)
+   - Attribution or supporting detail
+   - Best for: Testimonials, principles, philosophy
+
+6. **comparison**: Side-by-side
+   - Two columns: before/after, old/new, us/them
+   - Visual separation with color/border
+   - Best for: Contrasts, alternatives
+
+7. **timeline**: Sequential flow
+   - Horizontal or vertical progression
+   - Connected with lines/arrows
+   - Best for: Processes, history, roadmaps
+
+8. **stat_showcase**: Number as hero
+   - Massive statistic (80-120px)
+   - Supporting context below
+   - Best for: Impact metrics, key findings
+
+9. **layered_content**: Depth and hierarchy
+   - Overlapping elements
+   - Cards/panels at different z-levels
+   - Best for: Complex relationships, ecosystems
+
+10. **minimal_statement**: Maximum white space
+    - Single sentence or phrase
+    - 70%+ empty space
+    - Best for: Transitions, provocations
+
+11. **image_collage**: Visual storytelling
+    - 2-4 images in artistic arrangement
+    - Minimal text overlay
+    - Best for: Culture, examples, inspiration
+
+12. **full_bleed_text**: Typography as art
+    - Text is the visual element
+    - Creative typography treatment
+    - Best for: Quotes, bold statements, section titles
+
+=== CONTENT COMPONENTS ===
+
+VISUAL ELEMENTS (use strategically):
+
+**Charts** (choose by data story):
+- bar: Category comparison
+- horizontalBar: Ranking or comparison with labels
+- line: Trends over time
+- area: Volume/cumulative trends
+- pie: Parts of whole (max 5 slices)
+- donut: Like pie, more modern
+- scatter: Correlation/distribution
+- radar: Multi-dimensional comparison
+- gauge: Progress toward goal
+- funnel: Conversion/process stages
+- heatmap: Two-dimensional intensity
+
+**UI Components**:
+- stat_card: Large number + label + context
+- icon_list: Icons with short descriptions
+- progress_bar: Visual progress indicator
+- badge: Label/tag/category
+- callout_box: Highlighted insight/tip
+- avatar_group: Team/testimonial photos
+- metric_comparison: Side-by-side numbers
+
+**Visual Enhancements**:
+- gradient_overlay: Color transitions
+- shape_accent: Geometric elements
+- pattern_background: Subtle texture
+- icon_large: Oversized icon as visual anchor
+- illustration: Custom or stock illustrations
+- photography: Professional photos (always with specific prompts)
+
+=== SLIDE NARRATIVE STRUCTURE ({num_slides} slides) ===
+
+**ACT 1: CAPTURE (Slides 1-2)**
+Slide 1: Hero opening
+- Layout: "hero"
+- Powerful title + evocative subtitle
+- Dramatic visual
+- No chart needed
+
+Slide 2: Hook with tension
+- Layout: "stat_showcase" or "data_focus"
+- Surprising statistic or insight
+- Chart showing scale/urgency
+- Creates "problem awareness"
+
+**ACT 2: CONTEXT (Slides 3-4)**
+- Why now? What's changed?
+- Stakeholder impact
+- Layouts: "split_visual", "comparison", "timeline"
+- Build credibility with data
+
+**ACT 3: CORE INSIGHTS (Slides 5-{num_slides-3})**
+- One big idea per slide
+- Vary layouts for visual rhythm
+- 40% should include data visualization
+- Use "card_grid" for frameworks
+- Use "quote_statement" for principles
+- Build momentum toward solution
+
+**ACT 4: RESOLUTION (Last 3 slides)**
+- Slide {num_slides-2}: Synthesize key insights with "layered_content" or "comparison"
+- Slide {num_slides-1}: Action steps with "card_grid" (3-4 specific actions)
+- Slide {num_slides}: FINAL SLIDE - Must be unique and tailored:
+  * Layout: "hero" or "minimal_statement" (NOT center)
+  * Title: NEVER use generic titles like "Your Action Plan", "Conclusion", "Thank You"
+  * Title MUST be specific to {topic} and {purpose}:
+    - inform → "3 Things to Remember About {topic}"
+    - persuade → "Why {topic} Matters Right Now"
+    - inspire → "Your {topic} Journey Starts Today"
+    - educate → "Mastering {topic}: Your Next Steps"
+    - sell → "Ready to Transform with {topic}?"
+  * Content: Customize based on purpose and topic
+  * Avoid checkmarks and generic phrases
+  * Create emotional resonance and urgency
+
+=== QUALITY STANDARDS ===
+
+HEADLINES (action-oriented, specific):
+ "How 3 Design Changes Increased Conversion 127%"
+ "The $2.4M Cost of Ignoring User Feedback"
+ "Why Traditional Approaches Fail (And What Works Instead)"
+❌ "Results"
+❌ "Our Solution"
+❌ "Conclusion"
+
+CONTENT PRINCIPLES:
+- Progressive disclosure: Simple → Complex
+- Show, don't tell (visuals > words)
+- One concept per slide (ruthlessly)
+- 2-4 bullets maximum (or none)
+- Each slide passes "5-second test" (clarity)
+
+CHART EXCELLENCE:
+- Title states the insight: "Revenue Doubled After Q2 Launch"
+- Realistic, contextual data
+- Axis labels clear
+- Color encodes meaning
+- No chart junk
+
+IMAGE PROMPTS (be specific):
+ "diverse software team collaborating at modern standing desk, natural daylight, tech startup aesthetic, shallow depth of field"
+ "abstract data visualization particles forming network, dark blue and purple gradient, 3D render, cinematic"
+❌ "team working"
+❌ "office"
+
+=== JSON OUTPUT FORMAT ===
+
+Return ONLY valid JSON:
+
+{{
+  "presentation": {{
+    "title": "Compelling Main Title",
+    "subtitle": "Value proposition in one line",
+    "description": "2-3 sentence overview of narrative arc",
+    "designSystem": {{
+      "colorPalette": {{
+        "primary": "#HEX",
+        "secondary": "#HEX",
+        "accent": "#HEX",
+        "background": "#HEX",
+        "text": "#HEX"
+      }},
+      "theme": "{theme}",
+      "fontPairings": {{
+        "heading": "Modern sans-serif suggestion",
+        "body": "Readable sans-serif suggestion"
+      }}
+    }},
+    "slides": [
+      {{
+        "slideNumber": 1,
+        "type": "title",
+        "layout": "hero",
+        "title": "Powerful Opening Title",
+        "subtitle": "Evocative subtitle that creates intrigue",
+        "content": null,
+        "visualElements": {{
+          "backgroundType": "gradient" | "image" | "solid",
+          "imagePrompt": "specific, detailed prompt for hero image",
+          "gradientDirection": "to bottom right",
+          "overlayOpacity": 0.6
+        }},
+        "components": [],
+        "chartData": null,
+        "designNotes": "Opening should create immediate emotional connection"
+      }},
+      {{
+        "slideNumber": 2,
+        "type": "hook",
+        "layout": "stat_showcase",
+        "title": "Did You Know?",
+        "subtitle": null,
+        "content": "Brief context for the statistic",
+        "visualElements": {{
+          "backgroundType": "gradient",
+          "accentShape": "circle" | "rectangle" | null
+        }},
+        "components": [
+          {{
+            "type": "stat_card",
+            "value": "127%",
+            "label": "Increase in engagement",
+            "context": "After implementing these changes",
+            "size": "large"
+          }}
+        ],
+        "chartData": {{
+          "needed": true,
+          "type": "bar",
+          "title": "Scale of the Opportunity",
+          "description": "Chart showing dramatic difference",
+          "labels": ["Before", "After", "Industry Avg"],
+          "datasets": [
+            {{
+              "label": "Performance",
+              "values": [45, 102, 67],
+              "color": "#primary"
+            }}
+          ],
+          "config": {{
+            "showLegend": false,
+            "showGrid": true,
+            "orientation": "vertical"
+          }}
+        }},
+        "designNotes": "Create tension and curiosity"
+      }},
+      {{
+        "slideNumber": 3,
+        "type": "content",
+        "layout": "split_visual",
+        "title": "Specific, Benefit-Focused Headline",
+        "subtitle": null,
+        "content": "• First key insight (clear, concise)\\n• Supporting detail with context\\n• Why it matters to {audience}",
+        "visualElements": {{
+          "backgroundType": "solid",
+          "imagePrompt": "relevant professional image supporting the message",
+          "imagePlacement": "right"
+        }},
+        "components": [
+          {{
+            "type": "icon_list",
+            "items": [
+              {{"icon": "check", "text": "Key benefit one"}},
+              {{"icon": "check", "text": "Key benefit two"}}
+            ]
+          }}
+        ],
+        "chartData": null,
+        "designNotes": "Build on hook with actionable insights"
+      }}
+    ]
+  }}
+}}
+
+=== ADVANCED GUIDELINES ===
+
+LAYOUT RHYTHM:
+- Alternate between text-heavy and visual-heavy slides
+- Use "minimal_statement" slides as palate cleansers
+- Place data-heavy slides after conceptual ones
+- End sections with impact layouts ("hero", "quote_statement")
+
+VISUAL STORYTELLING:
+- Consistent visual metaphors throughout
+- Color coding for themes/categories
+- Progressive complexity in charts
+- White space increases toward ending (visual breathing room)
+
+ACCESSIBILITY:
+- Color contrast ratio ≥ 4.5:1
+- Don't rely solely on color to convey meaning
+- Alt text concepts for all images
+- Readable font sizes
+
+EMOTIONAL PACING:
+- Start: Curiosity/surprise
+- Middle: Understanding/concern
+- End: Hope/determination
+
+=== CRITICAL REQUIREMENTS ===
+
+ EXACTLY {num_slides} slides
+ Every slide has strategic purpose
+ Layout variety (use ≥6 different layouts)
+ Visual hierarchy is clear
+ Charts have realistic, contextual data
+ Image prompts are specific and purposeful
+ Design system is cohesive
+ Content is scannable and clear
+ No generic headlines
+ Narrative arc is complete
+
+NOW: Generate the presentation with sophistication, strategic thinking, and visual excellence."""
+
+        try:
+            print("🤖 Calling AI for Gamma-style generation...")
+            response = await self.call_openrouter_api(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=model
+            )
+        
+        # Parse JSON response
+            content = response.strip()
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+        
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group())
+                slides = data.get("slides", [])
+            
+                # Validate slide count
+                if len(slides) < num_slides:
+                    print(f"⚠️ Only {len(slides)} slides, adding more...")
+                    while len(slides) < num_slides:
+                        slides.append(self._create_intelligent_slide(topic, len(slides), audience))
+                elif len(slides) > num_slides:
+                    slides = slides[:num_slides]
+
+                data["slides"] = slides
+                print(f" Generated {len(slides)} Gamma-style slides")
+                return data
+            else:
+                raise Exception("No valid JSON found")
+            
+        except Exception as e:
+            print(f"❌ Gamma generation error: {e}")
+            return self._create_intelligent_fallback(topic, num_slides, audience, purpose)
     
     async def call_openrouter_api(self, system_prompt: str, user_prompt: str, model: str = None):
         """Generic helper to send a chat completion request to OpenRouter."""
@@ -109,15 +544,10 @@ class AIHeavyPresentationService:
         image_style: str = "professional"
     ) -> Dict[str, Any]:
         """Generate complete presentation with Gamma-level intelligence"""
-        
-        print(f"🎨 Generating Gamma-level presentation...")
-        print(f"📊 Topic: {topic}")
-        print(f"👥 Audience: {audience}")
-        print(f"🎯 Purpose: {purpose}")
 
+        print(f"🎨 Generating Gamma-level presentation...")
 
         if outline_sections and len(outline_sections) > 0:
-            print(f"📝 Using provided outline with {len(outline_sections)} sections")
             presentation_data = await self._generate_from_outline_sections(
                 outline_sections=outline_sections,
                 theme=theme_name,
@@ -128,8 +558,7 @@ class AIHeavyPresentationService:
                 image_style=image_style
             )
         else:
-            # Original flow for prompt-based generation
-            presentation_data = await self._generate_with_gamma_intelligence(
+            presentation_data = await self.generate_presentation_gamma_style(
                 topic=topic,
                 theme=theme_name,
                 num_slides=num_slides,
@@ -137,42 +566,41 @@ class AIHeavyPresentationService:
                 audience=audience,
                 purpose=purpose
             )
-        
-        # Step 1: Analyze topic and generate presentation structure
-        presentation_data = await self._generate_with_gamma_intelligence(
-            topic=topic,
-            theme=theme_name,
-            num_slides=num_slides,
-            model=model or self.default_model,
-            audience=audience,
-            purpose=purpose
-        )
-        
-        # Step 2: Generate AI images and charts
+
+    # Generate images and charts
         enhanced_slides = await self._add_media_assets(
             presentation_data.get("slides", [])
         )
-        
-        # Step 3: Apply theme, calculate height, add interactivity
+
+    # Apply theme
         theme = theme_manager.get_theme(theme_name)
         final_slides = []
-        
+
         for i, slide in enumerate(enhanced_slides):
             slide = self._apply_theme_colors(slide, theme)
             slide["height"] = self._calculate_dynamic_height(slide)
-            
+        
             if include_interactive:
                 slide = interactive_manager.enhance_slide_with_interactivity(slide)
-            
-            slide["id"] = slide.get("id") or f"slide_{i+1}_{int(datetime.now().timestamp() * 1000)}"
-            final_slides.append(slide)
         
+            slide["id"] = slide.get("id") or f"slide_{i+1}_{int(datetime.now().timestamp() * 1000)}"
+        
+        #  ADD THIS DEBUG LOG
+            if slide.get("chartUrl"):
+                print(f" Slide {i+1} HAS chartUrl: {len(slide['chartUrl'])} chars")
+        
+            final_slides.append(slide)
+
+    #  ADD THIS SUMMARY LOG
+        chart_count = sum(1 for s in final_slides if s.get("chartUrl"))
+        print(f"📊 FINAL CHECK: {chart_count}/{len(final_slides)} slides have charts")
+
         return {
             "title": presentation_data.get("title", topic.title()),
             "description": presentation_data.get("description", f"Professional presentation about {topic}"),
             "theme": theme.name,
             "themeData": self._get_theme_data(theme),
-            "slides": final_slides,
+            "slides": final_slides,  #  This should include chartUrl
             "metadata": {
                 "totalSlides": len(final_slides),
                 "hasInteractiveFeatures": include_interactive,
@@ -276,7 +704,7 @@ class AIHeavyPresentationService:
                 data = json.loads(json_match.group())
                 slides = data.get("slides", [])
 
-                # ✅ Ensure we have exactly the right number of slides
+                #  Ensure we have exactly the right number of slides
                 if len(slides) < num_slides:
                     print(f"⚠️ Only {len(slides)} slides, adding more...")
                     for i in range(len(slides), num_slides):
@@ -293,7 +721,7 @@ class AIHeavyPresentationService:
                     slides = slides[:num_slides]
 
                 data["slides"] = slides
-                print(f"✅ Generated {len(slides)} slides from outline")
+                print(f" Generated {len(slides)} slides from outline")
                 return data
             else:
                 raise Exception("No valid JSON found")
@@ -328,214 +756,7 @@ class AIHeavyPresentationService:
             "description": "Generated from outline",
             "slides": slides
         }
-    async def _generate_with_gamma_intelligence(
-        self,
-        topic: str,
-        theme: str,
-        num_slides: int,
-        model: str,
-        audience: str,
-        purpose: str
-    ) -> Dict[str, Any]:
-        """🎯 GAMMA-LEVEL: Generate presentation with deep content intelligence"""
-        
-        num_slides = max(8, min(15, num_slides))
-        
-        # Map purpose to presentation strategy
-        strategy_map = {
-            "inform": "educate the audience with clear, factual information",
-            "persuade": "convince the audience to take action or change perspective",
-            "inspire": "motivate and energize the audience",
-            "educate": "teach the audience new skills or concepts",
-            "sell": "demonstrate value and drive purchasing decisions"
-        }
-        
-        strategy = strategy_map.get(purpose.lower(), "inform and engage the audience")
-        
-        system_prompt = f"""You are an expert presentation designer with 15+ years creating compelling presentations for Fortune 500 companies, TEDx talks, and startup pitches.
-
-CORE EXPERTISE:
-- Storytelling and narrative structure
-- Data visualization and analytics
-- Business communication principles
-- Cognitive psychology and persuasion
-- Design thinking and UX
-- Industry trends and benchmarks
-
-YOUR MISSION: Create a presentation that doesn't just inform, but PERSUADES and INSPIRES.
-Each slide must serve the story and build toward a clear conclusion."""
-
-        user_prompt = f"""Create a professional presentation with EXACTLY {num_slides} slides.
-
-=== TOPIC ANALYSIS ===
-Topic: {topic}
-Target Audience: {audience}
-Purpose: {strategy}
-
-BEFORE CREATING SLIDES, ANALYZE:
-1. What's the current state/context of this topic?
-2. What does {audience} care about? What are their pain points?
-3. What should they think/feel/do after this presentation?
-4. What's the most compelling narrative to deliver this message?
-
-=== CONTENT STRATEGY ({num_slides} slides) ===
-
-OPENING (Slides 1-2):
-- Slide 1: Powerful title that promises value + compelling subtitle
-  Layout: "center", NO chart
-  
-- Slide 2: Hook with surprising insight, statistic, or provocative question
-  Type: "hook"
-  Layout: "split"
-  Include CHART showing problem/opportunity scale
-  Chart should have realistic data supporting the hook
-
-CONTEXT (Slides 3-4):
-- Why this matters NOW
-- Current challenges/landscape
-- Stakeholder impact
-Include relevant data visualization
-
-CORE CONTENT (Slides 5-{num_slides-2}):
-- One clear concept per slide
-- Build logically on previous slides
-- Action-oriented headlines (NOT generic)
-- Support claims with evidence
-- 30-40% should have charts with contextual data
-
-CLOSING (Last 2 slides):
-- Synthesize key insights
-- Clear call-to-action
-- Memorable takeaway
-
-=== SLIDE QUALITY RULES ===
-
-HEADLINES:
-✅ "How We Increased Revenue 40% in 90 Days"
-✅ "3 Critical Mistakes Costing You $50K/Year"
-❌ "Overview"
-❌ "Introduction"
-❌ "Background"
-
-CONTENT:
-- 3-5 bullet points MAX
-- One clear point per bullet
-- Simple, powerful language (8th grade level)
-- Each slide answers "So what?"
-
-CHART INTELLIGENCE:
-When chartData.needed = true:
-- Generate data that SUPPORTS the specific claim
-- Use realistic industry values
-- Choose type by data relationship:
-  * bar: Comparing categories
-  * line: Trends over time
-  * pie: Parts of whole (<6 categories only)
-  * scatter: Correlations
-- Title states the insight: "Revenue Grew 45% After Implementation"
-- NOT generic: "Data Chart"
-
-IMAGE PROMPTS:
-- Match emotional tone
-- Reinforce message (not generic)
-- Professional, modern aesthetic
-Example: "diverse team celebrating breakthrough, modern office, natural light, professional photography"
-
-=== JSON STRUCTURE ===
-
-Return ONLY valid JSON (no markdown, no code blocks):
-
-{{
-  "title": "Compelling Main Title Promising Value",
-  "description": "One-sentence value proposition",
-  "slides": [
-    {{
-      "type": "title",
-      "title": "Main Title Here",
-      "content": "Compelling subtitle creating interest",
-      "imagePrompt": "professional inspiring image matching {theme} theme",
-      "layout": "center",
-      "chartData": {{"needed": false}}
-    }},
-    {{
-      "type": "hook",
-      "title": "Did You Know? [Surprising Insight]",
-      "content": "• Compelling statistic\\n• Why it matters\\n• What's at stake",
-      "imagePrompt": "data visualization concept, modern, professional",
-      "layout": "split",
-      "chartData": {{
-        "needed": true,
-        "type": "bar",
-        "title": "Scale of the Opportunity",
-        "labels": ["Current", "Potential", "Industry Avg"],
-        "values": [45, 85, 60],
-        "description": "Data reveals significant growth potential"
-      }}
-    }},
-    {{
-      "type": "content",
-      "title": "Action-Oriented Headline (Specific, Not Generic)",
-      "content": "• First key insight\\n• Supporting detail\\n• Why it matters",
-      "imagePrompt": "relevant professional image supporting message",
-      "layout": "split",
-      "chartData": {{"needed": false}}
-    }}
-  ]
-}}
-
-CRITICAL REQUIREMENTS:
-✅ EXACTLY {num_slides} slides
-✅ Every slide has PURPOSE in narrative
-✅ Headlines are specific and benefit-focused
-✅ Charts support claims with realistic data
-✅ Content flows logically
-✅ Language is clear and conversational
-✅ NO generic titles like "Overview" or "Introduction"
-
-Generate the presentation now."""
-
-        try:
-            print("🤖 Calling AI for content generation...")
-            response = await self.call_openrouter_api(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                model=model
-            )
-            
             # Extract and parse JSON
-            content = response.strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-            
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-                slides = data.get("slides", [])
-                
-                # Validate and enhance slides
-                slides = self._validate_and_enhance_slides(slides, topic, audience)
-                
-                # Ensure correct count
-                if len(slides) < num_slides:
-                    print(f"⚠️ Only {len(slides)} slides, adding more...")
-                    while len(slides) < num_slides:
-                        slides.append(self._create_intelligent_slide(topic, len(slides), audience))
-                elif len(slides) > num_slides:
-                    slides = slides[:num_slides]
-                
-                data["slides"] = slides
-                print(f"✅ Generated {len(slides)} intelligent slides")
-                return data
-            else:
-                raise Exception("No valid JSON found")
-                
-        except Exception as e:
-            print(f"❌ AI generation error: {e}")
-            print("🔄 Using intelligent fallback...")
-            return self._create_intelligent_fallback(topic, num_slides, audience, purpose)
-    
     def _validate_and_enhance_slides(self, slides: List[Dict], topic: str, audience: str) -> List[Dict]:
         """Validate slide quality and enhance with intelligent defaults"""
         enhanced = []
@@ -803,7 +1024,7 @@ Generate the presentation now."""
         slides.append({
             "type": "conclusion",
             "title": "Your Action Plan",
-            "content": f"✅ Immediate next steps\n✅ Resources available\n✅ Support structure\n\n🎯 Let's transform {topic} together",
+            "content": f" Immediate next steps\n✅ Resources available\n✅ Support structure\n\n🎯 Let's transform {topic} together",
             "imagePrompt": "team success, celebration, professional photography",
             "layout": "center",
             "chartData": {"needed": False}
@@ -816,65 +1037,55 @@ Generate the presentation now."""
         }
     
     async def _add_media_assets(self, slides: List[Dict]) -> List[Dict]:
-        """Generate AI images and charts"""
-        enhanced = []
+     """Generate AI images and charts - with chart priority over image."""
+     enhanced = []
 
-        for i, slide in enumerate(slides):
-            try:
-                print(f"  Processing slide {i+1}/{len(slides)}: {slide.get('title')}")
-                chart_data = slide.get("chartData", {})
-                has_chart = chart_data.get("needed", False)
-                
-                if not has_chart:
-                    height = self._calculate_dynamic_height(slide)
-                    image_prompt = slide.get("imagePrompt", slide.get('title', 'professional presentation'))
+     for i, slide in enumerate(slides):
+         try:
+             print(f"  Processing slide {i+1}/{len(slides)}: {slide.get('title')}")
+             chart_data = slide.get("chartData", {})
+             has_chart = chart_data.get("needed", False)
 
-                    try:
-                        image_url = await self._generate_hf_image(image_prompt, height)
-                        if image_url:
-                            slide["imageUrl"] = image_url
-                            print(f"    ✅ Image: Hugging Face")
-                        else:
-                            image_url = await self._generate_pollinations_image(image_prompt, height)
-                            slide["imageUrl"] = image_url
-                            print(f"    ✅ Image: Pollinations.ai")
-                    except Exception as img_error:
-                        print(f"    ⚠️ Image error: {img_error}")
-                        image_url = await self._generate_pollinations_image(image_prompt, height)
-                        slide["imageUrl"] = image_url
-                else:
-                    slide["imageUrl"] = ""  # ✅ Explicitly empty
-                    print(f"    📊 Slide has chart - no image generated")
+             #  If chart exists → DO NOT generate image
+             if has_chart:
+                 slide["imageUrl"] = ""  # override -> no image
+                 try:
+                     chart_url = self._render_chart(chart_data)
+                     slide["chartUrl"] = chart_url if chart_url else ""
+                     print(f"    📊 Chart generated ({chart_data.get('type', 'bar')})")
+                 except Exception as chart_error:
+                     print(f"    ❌ Chart error: {chart_error}")
+                     slide["chartUrl"] = ""  # failed chart safe fallback
+             else:
+                 #  generate image only if no chart
+                 slide["chartUrl"] = ""  # explicitly empty
+                 height = self._calculate_dynamic_height(slide)
+                 try:
+                     image_prompt = slide.get("imagePrompt", slide.get('title', 'professional'))
+                     image_url = await self._generate_hf_image(image_prompt, height)
+                     if not image_url:
+                         image_url = await self._generate_pollinations_image(image_prompt, height)
+                     slide["imageUrl"] = image_url
+                     print(f"     Image generated")
+                 except Exception as img_error:
+                     print(f"    ⚠️ Image error: {img_error}")
+                     slide["imageUrl"] = ""
 
-            # Generate chart if needed
-                if has_chart:
-                    try:
-                        chart_url = self._render_chart(chart_data)
-                        if chart_url:
-                            slide["chartUrl"] = chart_url  # ✅ SET THIS
-                            slide["chartData"] = chart_data
-                            print(f"    📊 Chart: {chart_data.get('type', 'bar')}")
-                        else:
-                            print(f"    ⚠️ Chart rendering returned None")
-                            slide["chartUrl"] = ""  # ✅ Set empty if failed
-                    except Exception as chart_error:
-                        print(f"    ❌ Chart error: {chart_error}")
-                        slide["chartUrl"] = ""  # ✅ Set empty if error
-                else:
-                    slide["chartUrl"] = ""  # ✅ No chart needed
+             #  intelligent layout logic
+             slide["layout"] = "chart" if has_chart else "image"
 
-                enhanced.append(slide)
+             enhanced.append(slide)
 
-            except Exception as e:
-                print(f"  ❌ Critical error on slide {i+1}: {e}")
-                if "imageUrl" not in slide:
-                    slide["imageUrl"] = ""
-                if "chartUrl" not in slide:
-                    slide["chartUrl"] = ""
-                enhanced.append(slide)
+         except Exception as e:
+             print(f"  ❌ Critical error on slide {i+1}: {e}")
+             # never crash slide
+             slide.setdefault("chartUrl", "")
+             slide.setdefault("imageUrl", "")
+             slide.setdefault("layout", "image")
+             enhanced.append(slide)
 
-        print(f"✅ Processed {len(enhanced)}/{len(slides)} slides")
-        return enhanced
+     print(f" Processed {len(enhanced)}/{len(slides)} slides")
+     return enhanced
 
     
     async def _generate_hf_image(self, prompt: str, height: int = 800):
@@ -1069,14 +1280,14 @@ Generate the presentation now."""
         try:
             result = await self._generate_hf_image(prompt, height)
             if result:
-                print("✅ Image source: Hugging Face")
+                print(" Image source: Hugging Face")
                 return result
         except Exception as e:
             print(f"⚠️ HF failed: {str(e)[:80]}")
 
         print("🔄 Using Pollinations.ai fallback...")
         result = await self._generate_pollinations_image(prompt, height)
-        print("✅ Image source: Pollinations.ai")
+        print(" Image source: Pollinations.ai")
         return result
     
     async def generate_outline(self, content: str):
@@ -1148,7 +1359,7 @@ Create 8-15 sections that:
             elif len(sections) > 15:
                 sections = sections[:15]
 
-            print(f"✅ Generated {len(sections)} strategic outline sections")
+            print(f" Generated {len(sections)} strategic outline sections")
 
             return {
                 "title": data.get("title", "Strategic Presentation Outline"),
@@ -1220,6 +1431,7 @@ CONTENT:
 
 Extract key insights, organize logically, add charts where data supports claims."""
 
+            #  USE YOUR EXISTING OpenRouter API method
             response = await self.call_openrouter_api(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt
@@ -1232,7 +1444,15 @@ Extract key insights, organize logically, add charts where data supports claims.
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0].strip()
 
-            data = json.loads(response)
+            try:
+                data = json.loads(response)
+            except Exception:
+    # try to extract JSON from inside text
+                match = re.search(r'\{.*\}|\[.*\]', response, re.DOTALL)
+                if match:
+                    data = json.loads(match.group(0))
+                else:
+                    data = None
 
             if outline_only:
                 sections = data.get("sections", [])
@@ -1280,11 +1500,20 @@ Extract key insights, organize logically, add charts where data supports claims.
                         "content": content,
                         "layout": "split",
                         "chartData": chart_data,
-                        "imagePrompt": f"{title} professional illustration"
+                        "imagePrompt": f"{title} professional illustration",
+                        "id": f"slide_{i+1}_{int(datetime.now().timestamp() * 1000)}"
                     }
                     
                     slides.append(slide)
 
+                slides = await self._add_media_assets(slides)
+
+                #  FINAL ENFORCEMENT: if chart => no image, if image => no chart
+                for s in slides:
+                    if s.get("chartData", {}).get("needed", False):
+                        s["imageUrl"] = ""
+                    else:
+                        s["chartUrl"] = ""
                 return {
                     "title": f"Analysis: {filename}",
                     "description": "Document presentation",
@@ -1310,16 +1539,19 @@ Extract key insights, organize logically, add charts where data supports claims.
                     "title": f"Summary: {filename}",
                     "slides": [
                         {
+                            "id": f"slide_{i+1}_{int(datetime.now().timestamp() * 1000)}",
                             "title": f"Slide {i+1}", 
                             "content": "Content", 
                             "type": "content", 
                             "layout": "split",
-                            "chartData": {"needed": False}
+                            "chartData": {"needed": False},
+                            "imageUrl": "",
+                            "chartUrl": ""
                         }
                         for i in range(8)
                     ]
                 }
-    
+
     def _clean_text(self, text: str) -> str:
         """Clean text from escape sequences"""
         if not text:

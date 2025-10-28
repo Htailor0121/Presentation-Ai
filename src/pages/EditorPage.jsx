@@ -68,7 +68,7 @@ const EditorPage = () => {
     align: "left"
   });
   const [slideMenuOpen, setSlideMenuOpen] = useState(null);
-  const [showCardStyling, setShowCardStyling] = useState(null); // ✅ ADD THIS LINE
+  const [showCardStyling, setShowCardStyling] = useState(null); //  ADD THIS LINE
 
   const theme = gradientThemes[currentTheme] || gradientThemes["classic-light"];
 
@@ -109,92 +109,7 @@ const EditorPage = () => {
               }
             }
             
-            // Extract content properly
-            let cleanContent = slideData.content || "Generated AI Slide Content";
-            
-            // If content is still a JSON string, parse it
-            if (typeof cleanContent === 'string' && (cleanContent.includes('"type"') || cleanContent.includes('"content"'))) {
-              try {
-                const parsed = JSON.parse(cleanContent);
-                cleanContent = parsed.content || cleanContent;
-              } catch {
-                // Try regex extraction as fallback
-                const contentMatch = cleanContent.match(/"content"\s*:\s*"([^"]+)"/);
-                if (contentMatch) {
-                  cleanContent = contentMatch[1];
-                }
-              }
-            }
-            
-            // Clean escape sequences
-            if (typeof cleanContent === 'string') {
-              cleanContent = cleanContent
-                .replace(/\\n/g, '\n')
-                .replace(/\\"/g, '"')
-                .replace(/\\t/g, '\t')
-                .replace(/\\/g, '')
-                .trim();
-            }
-            
-            // Extract title properly
-            let cleanTitle = slideData.title || `Slide ${i + 1}`;
-            if (typeof cleanTitle === 'string') {
-              cleanTitle = cleanTitle
-                .replace(/\\n/g, ' ')
-                .replace(/\\"/g, '"')
-                .replace(/\\/g, '')
-                .trim();
-            }
-            
-            return {
-              id: slideData.id || `slide_${i + 1}_${Date.now()}`,
-              title: cleanTitle,
-              content: cleanContent,
-              imageUrl: slideData.imageUrl || (slideData.imagePrompt?.startsWith("http")
-                ? slideData.imagePrompt
-                : `https://image.pollinations.ai/prompt/${encodeURIComponent(
-                    slideData.imagePrompt || cleanTitle
-                  )}?width=1920&height=1080&nologo=true`),
-              layout: slideData.layout || "split",
-              textAlign: slideData.textAlign || "left",
-              type: slideData.type || "content",
-            };
-          });
-          setSlides(formatted);
-          if (formatted.length > 0) {
-            setSelectedSlide(formatted[0]);
-          }
-        }
-      } catch (err) {
-        console.error("Error loading presentation:", err);
-        toast.error("Failed to load presentation");
-      }
-    };
-    loadPresentation();
-  }, [outline, presentationId]);useEffect(() => {
-    const loadPresentation = async () => {
-      try {
-        if (presentationId) {
-          const data = await presentationAPI.getPresentations();
-          const existing = data.find((p) => p.id === presentationId);
-          if (existing) {
-            setSlides(existing.slides || []);
-            setSelectedSlide(existing.slides?.[0] || null);
-          }
-        } else if (outline.length > 0) {
-          const formatted = outline.map((item, i) => {
-            // Handle if the entire item is a JSON string
-            let slideData = item;
-            if (typeof item === 'string') {
-              try {
-                slideData = JSON.parse(item);
-              } catch (e) {
-                console.warn('Failed to parse slide item as JSON:', e);
-                slideData = { content: item };
-              }
-            }
-            
-            // ✅ DEBUG: Log what we received from backend
+            //  DEBUG: Log what we received from backend
             console.log(`🔍 Slide ${i+1} received from backend:`, {
               title: slideData.title,
               hasChartUrl: !!slideData.chartUrl,
@@ -243,22 +158,22 @@ const EditorPage = () => {
                 .trim();
             }
             
-            // ✅ IMPORTANT: Preserve chartUrl and imageUrl from backend
+            //  IMPORTANT: Preserve chartUrl and imageUrl from backend
             const finalSlide = {
               id: slideData.id || `slide_${i + 1}_${Date.now()}`,
               title: cleanTitle,
               content: cleanContent,
-              imageUrl: slideData.imageUrl || "",  // ✅ Keep as-is from backend
-              chartUrl: slideData.chartUrl || "",  // ✅ Keep as-is from backend
+              imageUrl: slideData.imageUrl || "",  //  Keep as-is from backend
+              chartUrl: slideData.chartUrl || "",  //  Keep as-is from backend
               layout: slideData.layout || "split",
               textAlign: slideData.textAlign || "left",
               type: slideData.type || "content",
               height: slideData.height || 800,
-              chartData: slideData.chartData || { needed: false }  // ✅ Preserve chart metadata
+              chartData: slideData.chartData || { needed: false }  //  Preserve chart metadata
             };
             
-            // ✅ DEBUG: Log final processed slide
-            console.log(`✅ Slide ${i+1} processed:`, {
+            //  DEBUG: Log final processed slide
+            console.log(` Slide ${i+1} processed:`, {
               title: finalSlide.title,
               hasChart: !!finalSlide.chartUrl,
               hasImage: !!finalSlide.imageUrl,
@@ -267,8 +182,8 @@ const EditorPage = () => {
             
             return finalSlide;
           });
-          
-          // ✅ DEBUG: Summary of all slides
+
+          //  DEBUG: Summary of all slides
           console.log("📊 SLIDE SUMMARY:", formatted.map((s, idx) => ({
             slide: idx + 1,
             title: s.title,
@@ -303,7 +218,7 @@ const EditorPage = () => {
     const autoSaveTimeout = setTimeout(async () => {
       try {
         await handleSave();
-        console.log("✅ Auto-saved");
+        console.log(" Auto-saved");
       } catch (error) {
         console.error("Auto-save failed:", error);
       }
@@ -353,7 +268,7 @@ const EditorPage = () => {
       }
 
       toast.dismiss(loadingToast);
-      toast.success("✅ Presentation saved successfully!");
+      toast.success(" Presentation saved successfully!");
     } catch (err) {
       console.error(err);
       toast.error("❌ Failed to save presentation");
@@ -884,7 +799,7 @@ const EditorPage = () => {
         setSelectedSlide(updatedSelected);
       }
       
-      toast.success(`✅ All ${slides.length} slides optimized!`);
+      toast.success(` All ${slides.length} slides optimized!`);
     } catch (error) {
       console.error(error);
       toast.error("❌ Batch optimization failed");
@@ -950,7 +865,7 @@ const EditorPage = () => {
     }
     
     toast(message, {
-      icon: score >= 80 ? "✅" : "💡",
+      icon: score >= 80 ? "" : "💡",
       duration: 5000
     });
   };
@@ -986,10 +901,10 @@ const EditorPage = () => {
     const padding = isPresent ? "p-16" : "p-10";
     const fontFamily = theme.font;
   
-    // ✅ CHECK: Does this slide have a chart?
+    //  CHECK: Does this slide have a chart?
     const hasChart = slide.chartUrl && slide.chartUrl.trim() !== "";
     
-    // ✅ CHECK: Does this slide have a valid image?
+    //  CHECK: Does this slide have a valid image?
     const hasValidImage = slide.imageUrl && 
                           slide.imageUrl.trim() !== "" && 
                           !slide.imageUrl.includes("placeholder");
@@ -1171,7 +1086,7 @@ const EditorPage = () => {
           <div className="w-full h-full flex flex-col" style={{ fontFamily }}>
             {/* Top Section: Image + Content OR Just Content */}
             <div className="flex flex-1">
-              {/* ✅ Image Section - ONLY if NO CHART AND valid imageUrl */}
+              {/*  Image Section - ONLY if NO CHART AND valid imageUrl */}
               {!hasChart && hasValidImage && (
               <div className="flex-1 relative">
                 {isPresent ? (
@@ -1210,7 +1125,7 @@ const EditorPage = () => {
               </div>
             </div>
             
-            {/* ✅ CHART DISPLAY - Full width at bottom */}
+            {/*  CHART DISPLAY - Full width at bottom */}
             {hasChart && (
               <div className="w-full bg-white border-t-2 border-gray-200 p-6 flex items-center justify-center">
                 <img 
@@ -1804,22 +1719,24 @@ const EditorPage = () => {
               </>
             ) : (
               // List view - Simple text only like Google Slides
-              <div className="flex items-center gap-3 px-3 py-2.5 bg-white hover:bg-gray-50 transition">
-                <span className="text-gray-500 text-sm font-medium w-6 text-center flex-shrink-0">
+              <div className="w-full px-3 py-3 bg-white hover:bg-gray-50 transition flex items-center gap-3 border-b border-gray-100">
+                <span className="text-gray-500 text-sm font-medium min-w-[24px] text-left flex-shrink-0">
                   {index + 1}
                 </span>
                 
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm text-gray-900 truncate">{slide.title}</h3>
+                  <h3 className="text-sm text-gray-800 truncate font-normal">
+                    {slide.title}
+                  </h3>
                 </div>
                 
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDuplicateSlide(slide.id);
                     }}
-                    className="p-1.5 hover:bg-gray-100 rounded transition"
+                    className="p-1.5 hover:bg-gray-200 rounded transition"
                     title="Duplicate"
                   >
                     <Copy size={14} className="text-gray-600" />
@@ -1829,7 +1746,7 @@ const EditorPage = () => {
                       e.stopPropagation();
                       handleDeleteSlide(slide.id);
                     }}
-                    className="p-1.5 hover:bg-red-50 rounded transition"
+                    className="p-1.5 hover:bg-red-100 rounded transition"
                     title="Delete"
                   >
                     <Trash2 size={14} className="text-red-600" />
@@ -1945,7 +1862,7 @@ style={{
     </div>
   ) : (
     slides.map((slide, index) => {
-      // ✅ CALCULATE DYNAMIC HEIGHT
+      //  CALCULATE DYNAMIC HEIGHT
       const slideHeight = slide.height || 800;
       const scaledHeight = Math.floor(slideHeight * 0.65); // Scale down 65% for editor
       const minHeight = 500;
@@ -2252,7 +2169,7 @@ style={{
           </div>
 
           {slide.id === selectedSlide?.id ? (
-            // ✅ EDITABLE VIEW WITH CHART SUPPORT - NO IMAGE IF CHART
+            //  EDITABLE VIEW WITH CHART SUPPORT - NO IMAGE IF CHART
             <div className="w-full h-full flex flex-col overflow-hidden relative" style={{ fontFamily: theme.font }}>
               {/* Top-left slide controls - fixed position, always visible */}
               
@@ -2311,7 +2228,7 @@ style={{
                 </div>
               </div>
               
-              {/* ✅ CHART DISPLAY SECTION - FIXED POSITION */}
+              {/*  CHART DISPLAY SECTION - FIXED POSITION */}
               {slide.chartUrl && (
                 <div className="w-full bg-white/95 border-t-2 border-gray-200 p-4 flex items-center justify-center flex-shrink-0">
                   <img
@@ -2323,7 +2240,7 @@ style={{
               )}
             </div>
           ) : (
-            // ✅ PREVIEW VIEW
+            //  PREVIEW VIEW
             renderSlideContent(slide, false)
           )}
         </motion.div>

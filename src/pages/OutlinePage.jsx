@@ -131,12 +131,12 @@ const OutlinePage = () => {
         theme: selectedTheme,
         include_interactive: true,
         num_slides: outline.length,
-        // ✅ PASS OUTLINE SECTIONS to backend
+        //  PASS OUTLINE SECTIONS to backend
         outline_sections: outline.map((item, idx) => ({
           title: item.title || `Section ${idx + 1}`,
           content: item.content || ""
         })),
-        // ✅ PASS CUSTOMIZATION OPTIONS
+        //  PASS CUSTOMIZATION OPTIONS
         audience: "professionals",
         purpose: "inform",
         text_level: textLevel,
@@ -153,7 +153,7 @@ const OutlinePage = () => {
         );
       }
   
-      // ✅ Ensure all slides have proper images
+      //  Ensure all slides have proper images
       const slidesWithImages = res.data.slides.map((slide, idx) => {
         if (!slide.imageUrl || slide.imageUrl.includes('placeholder')) {
           const imagePrompt = slide.title || `Slide ${idx + 1}`;
@@ -164,7 +164,7 @@ const OutlinePage = () => {
         return slide;
       });
   
-      toast.success(`✅ Generated ${slideCount} slides successfully!`);
+      toast.success(` Generated ${slideCount} slides successfully!`);
   
       navigate("/editor", {
         state: {
