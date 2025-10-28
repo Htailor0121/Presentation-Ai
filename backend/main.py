@@ -145,26 +145,33 @@ async def generate_presentation_from_prompt(
         
         # Convert to frontend format
         slides = []
+        # NEW CODE - USE THIS ✅
         for slide_data in ai_response.get("slides", []):
             if "id" not in slide_data or not slide_data["id"]:
                 slide_data["id"] = f"slide_{uuid.uuid4()}"
-            
-            image_url = slide_data.get("imageUrl")
-            
-            if not image_url:
+    
+    # ✅ FIX: Check if slide has a chart
+            has_chart = slide_data.get("chartData", {}).get("needed", False)
+            image_url = slide_data.get("imageUrl", "")
+    
+    # ✅ Only generate new image if NO chart AND NO existing image
+            if not has_chart and not image_url:
                 image_prompt = slide_data.get("imagePrompt")
                 if not image_prompt:
                     title = slide_data.get("title", "")
                     content = slide_data.get("content", "")
                     image_prompt = f"{title}. {content[:100]}. Professional, modern, high quality"
-                
+        
                 try:
                     image_url = await ai_service.generate_image(image_prompt)
                     if not image_url:
                         image_url = "https://source.unsplash.com/1200x800/?presentation,professional"
                 except Exception:
                     image_url = "https://source.unsplash.com/1200x800/?presentation,professional"
-            
+            elif has_chart:
+        # ✅ Chart slides don't need images
+                image_url = ""
+    
             slide = SlideRequest(
                 type=slide_data.get("type", "content"),
                 title=slide_data.get("title", ""),

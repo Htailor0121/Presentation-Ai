@@ -125,58 +125,47 @@ const OutlinePage = () => {
   
       console.log(`🎯 Generating ${outline.length} slides from outline...`);
   
-      //  Create a better prompt that includes outline context
-      // but asks AI to create INDIVIDUAL slides (not dump everything)
-      const outlineSummary = outline
-        .map((item, idx) => `${idx + 1}. ${item.title}`)
-        .join("\n");
-  
-      const fullPrompt = `Create a ${outline.length}-slide presentation based on this outline:
-  
-  ${outlineSummary}
-  
-  IMPORTANT: Create ${outline.length} separate slides. Each slide should have:
-  - Its own specific title (from the outline)
-  - Concise bullet points (3-5 points per slide)
-  - Do NOT repeat content across slides
-  
-  Return EXACTLY ${outline.length} slides.`;
-  
-      //  Call backend to generate complete slides with AI
       const res = await axios.post(`${API_BASE}/generate-presentation`, {
-        prompt: fullPrompt,
+        prompt: prompt || "Create professional presentation",
         model: "mistralai/mistral-7b-instruct:free",
         theme: selectedTheme,
         include_interactive: true,
-        num_slides: outline.length, //  Force exact count
+        num_slides: outline.length,
+        // ✅ PASS OUTLINE SECTIONS to backend
+        outline_sections: outline.map((item, idx) => ({
+          title: item.title || `Section ${idx + 1}`,
+          content: item.content || ""
+        })),
+        // ✅ PASS CUSTOMIZATION OPTIONS
+        audience: "professionals",
+        purpose: "inform",
+        text_level: textLevel,
+        image_style: imageStyle
       });
   
       toast.dismiss(loadingToast);
   
       const slideCount = res.data?.slides?.length || 0;
   
-      //  Validate slide count matches outline
       if (slideCount !== outline.length) {
         console.warn(
-          ` Warning: Generated ${slideCount} slides but outline has ${outline.length} sections`
+          `⚠️ Warning: Generated ${slideCount} slides but outline has ${outline.length} sections`
         );
       }
   
-      //  Ensure all slides have images
+      // ✅ Ensure all slides have proper images
       const slidesWithImages = res.data.slides.map((slide, idx) => {
-        // If image is missing or broken, add fallback
         if (!slide.imageUrl || slide.imageUrl.includes('placeholder')) {
           const imagePrompt = slide.title || `Slide ${idx + 1}`;
           slide.imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(
-            `${imagePrompt}, professional presentation, modern, high quality, 4k`
+            `${imagePrompt}, ${imageStyle} style, professional, high quality, 4k`
           )}?width=1920&height=1080&nologo=true&enhance=true&seed=${Date.now() + idx}`;
         }
         return slide;
       });
   
-      toast.success(` Generated ${slideCount} slides successfully!`);
+      toast.success(`✅ Generated ${slideCount} slides successfully!`);
   
-      // Navigate to editor with AI-generated slides
       navigate("/editor", {
         state: {
           outline: slidesWithImages,
@@ -188,7 +177,7 @@ const OutlinePage = () => {
       toast.error(
         err.response?.data?.detail || "Failed to generate slides. Please try again."
       );
-      console.error(" Error generating slides:", err);
+      console.error("❌ Error generating slides:", err);
     } finally {
       setGeneratingSlides(false);
     }

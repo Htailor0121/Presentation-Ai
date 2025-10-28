@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { Home } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { presentationAPI } from "../services/api";
 
@@ -10,24 +10,12 @@ const CreatePage = () => {
   const [loading, setLoading] = useState(true);
 
   const cards = [
-    // {
-    //   title: "Paste in text",
-    //   desc: "Create from notes, an outline, or existing content",
-    //   img: "/src/assets/paste.png",
-    //   path: "/paste",
-    // },
     {
       title: "Generate",
       desc: "Create from a one-line prompt in a few seconds",
       img: "/src/assets/generate.png",
       path: "/generate",
     },
-    // {
-    //   title: "Import file or URL",
-    //   desc: "Enhance existing docs, presentations, or webpages",
-    //   img: "/src/assets/import.png",
-    //   path: "/import",
-    // },
   ];
 
   useEffect(() => {
@@ -50,16 +38,16 @@ const CreatePage = () => {
       style={{
         background:
           "linear-gradient(to bottom right, #f9fafb 0%, #e3eeff 35%, #c9e4ff 100%)",
-        color: "#002253", // default text tone
+        color: "#002253",
       }}
     >
-      {/* Back Button */}
+      {/* Home Button */}
       <div className="w-full max-w-6xl px-6 pt-6">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-[#002253] hover:text-[#0000A3] transition font-medium"
+          className="flex items-center gap-2 bg-white hover:bg-gray-50 text-[#002253] transition font-medium px-4 py-2 rounded-full shadow-sm border border-gray-200"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <Home className="w-5 h-5" />
           Home
         </button>
       </div>

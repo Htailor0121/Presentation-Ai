@@ -5,6 +5,14 @@ import toast from "react-hot-toast";
 import presentationAPI from "../services/api";
 import ThemeSelector, { themes as gradientThemes } from "../components/ThemeSelector";
 import {
+  MoreVertical,
+  Palette,
+  Sparkles,
+  RefreshCw,
+  Download,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
   Save,
   Eye,
   Plus,
@@ -13,13 +21,11 @@ import {
   Search,
   BarChart2,
   Layout,
-  Sparkles,
   RefreshCcw,
   ChevronDown,
   Grid,
   List,
   X,
-  Maximize2,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -28,15 +34,10 @@ import {
   Underline,
   Trash2,
   Copy,
-  Download,
   Share2,
   EyeOff,
   ChevronLeft,
   ChevronRight,
-  MoreVertical,
-  Palette,
-  ZoomIn,
-  ZoomOut,
   RotateCw,
 } from "lucide-react";
 
@@ -67,6 +68,7 @@ const EditorPage = () => {
     align: "left"
   });
   const [slideMenuOpen, setSlideMenuOpen] = useState(null);
+  const [showCardStyling, setShowCardStyling] = useState(null); // ✅ ADD THIS LINE
 
   const theme = gradientThemes[currentTheme] || gradientThemes["classic-light"];
 
@@ -169,6 +171,123 @@ const EditorPage = () => {
       }
     };
     loadPresentation();
+  }, [outline, presentationId]);useEffect(() => {
+    const loadPresentation = async () => {
+      try {
+        if (presentationId) {
+          const data = await presentationAPI.getPresentations();
+          const existing = data.find((p) => p.id === presentationId);
+          if (existing) {
+            setSlides(existing.slides || []);
+            setSelectedSlide(existing.slides?.[0] || null);
+          }
+        } else if (outline.length > 0) {
+          const formatted = outline.map((item, i) => {
+            // Handle if the entire item is a JSON string
+            let slideData = item;
+            if (typeof item === 'string') {
+              try {
+                slideData = JSON.parse(item);
+              } catch (e) {
+                console.warn('Failed to parse slide item as JSON:', e);
+                slideData = { content: item };
+              }
+            }
+            
+            // ✅ DEBUG: Log what we received from backend
+            console.log(`🔍 Slide ${i+1} received from backend:`, {
+              title: slideData.title,
+              hasChartUrl: !!slideData.chartUrl,
+              chartUrlLength: slideData.chartUrl?.length || 0,
+              chartUrlPreview: slideData.chartUrl?.substring(0, 50) || 'none',
+              hasImageUrl: !!slideData.imageUrl,
+              imageUrlPreview: slideData.imageUrl?.substring(0, 50) || 'none',
+              layout: slideData.layout,
+              type: slideData.type
+            });
+            
+            // Extract content properly
+            let cleanContent = slideData.content || "Generated AI Slide Content";
+            
+            // If content is still a JSON string, parse it
+            if (typeof cleanContent === 'string' && (cleanContent.includes('"type"') || cleanContent.includes('"content"'))) {
+              try {
+                const parsed = JSON.parse(cleanContent);
+                cleanContent = parsed.content || cleanContent;
+              } catch {
+                // Try regex extraction as fallback
+                const contentMatch = cleanContent.match(/"content"\s*:\s*"([^"]+)"/);
+                if (contentMatch) {
+                  cleanContent = contentMatch[1];
+                }
+              }
+            }
+            
+            // Clean escape sequences
+            if (typeof cleanContent === 'string') {
+              cleanContent = cleanContent
+                .replace(/\\n/g, '\n')
+                .replace(/\\"/g, '"')
+                .replace(/\\t/g, '\t')
+                .replace(/\\/g, '')
+                .trim();
+            }
+            
+            // Extract title properly
+            let cleanTitle = slideData.title || `Slide ${i + 1}`;
+            if (typeof cleanTitle === 'string') {
+              cleanTitle = cleanTitle
+                .replace(/\\n/g, ' ')
+                .replace(/\\"/g, '"')
+                .replace(/\\/g, '')
+                .trim();
+            }
+            
+            // ✅ IMPORTANT: Preserve chartUrl and imageUrl from backend
+            const finalSlide = {
+              id: slideData.id || `slide_${i + 1}_${Date.now()}`,
+              title: cleanTitle,
+              content: cleanContent,
+              imageUrl: slideData.imageUrl || "",  // ✅ Keep as-is from backend
+              chartUrl: slideData.chartUrl || "",  // ✅ Keep as-is from backend
+              layout: slideData.layout || "split",
+              textAlign: slideData.textAlign || "left",
+              type: slideData.type || "content",
+              height: slideData.height || 800,
+              chartData: slideData.chartData || { needed: false }  // ✅ Preserve chart metadata
+            };
+            
+            // ✅ DEBUG: Log final processed slide
+            console.log(`✅ Slide ${i+1} processed:`, {
+              title: finalSlide.title,
+              hasChart: !!finalSlide.chartUrl,
+              hasImage: !!finalSlide.imageUrl,
+              layout: finalSlide.layout
+            });
+            
+            return finalSlide;
+          });
+          
+          // ✅ DEBUG: Summary of all slides
+          console.log("📊 SLIDE SUMMARY:", formatted.map((s, idx) => ({
+            slide: idx + 1,
+            title: s.title,
+            hasChart: !!s.chartUrl,
+            hasImage: !!s.imageUrl,
+            layout: s.layout
+          })));
+          
+          setSlides(formatted);
+          if (formatted.length > 0) {
+            setSelectedSlide(formatted[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading presentation:", err);
+        toast.error("Failed to load presentation");
+      }
+    };
+    loadPresentation();
   }, [outline, presentationId]);
 
   useEffect(() => {
@@ -212,6 +331,7 @@ const EditorPage = () => {
     window.addEventListener("keydown", handleKeyPress);
     return () => window.removeEventListener("keydown", handleKeyPress);
   }, [presentMode, currentPresentSlide, slides.length]);
+
 
   // Save presentation
   const handleSave = async () => {
@@ -866,21 +986,45 @@ const EditorPage = () => {
     const padding = isPresent ? "p-16" : "p-10";
     const fontFamily = theme.font;
   
+    // ✅ CHECK: Does this slide have a chart?
+    const hasChart = slide.chartUrl && slide.chartUrl.trim() !== "";
+    
+    // ✅ CHECK: Does this slide have a valid image?
+    const hasValidImage = slide.imageUrl && 
+                          slide.imageUrl.trim() !== "" && 
+                          !slide.imageUrl.includes("placeholder");
+  
+    console.log(`🔍 Slide: ${slide.title}`);
+    console.log(`   hasChart: ${hasChart}`);
+    console.log(`   hasValidImage: ${hasValidImage}`);
+    console.log(`   chartUrl: ${slide.chartUrl}`);
+  
     switch (slide.layout) {
       case "full-image":
         return (
           <div className="relative w-full h-full" style={{ fontFamily }}>
-            {slide.imageUrl && (
-              <img src={slide.imageUrl} alt={slide.title} className="w-full h-full object-cover" />
+            {!hasChart && hasValidImage && (
+              isPresent ? (
+                <img src={slide.imageUrl} alt={slide.title} className="w-full h-full object-cover" />
+              ) : (
+                <ImageWithOptions src={slide.imageUrl} alt={slide.title} />
+              )
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex flex-col justify-end p-12">
               <h2 className={`${size} font-bold text-white mb-4`}>{slide.title}</h2>
               <p className={`${contentSize} text-white/90 leading-relaxed`}>{slide.content}</p>
               
-              {/* ✅ CHART DISPLAY */}
-              {slide.chartUrl && (
+              {hasChart && (
                 <div className="mt-6 bg-white/95 rounded-xl p-4">
-                  <img src={slide.chartUrl} alt="Chart" className="w-full h-auto rounded-lg" />
+                  <img 
+                    src={slide.chartUrl} 
+                    alt="Chart" 
+                    className="w-full h-auto rounded-lg max-h-96 object-contain" 
+                    onError={(e) => {
+                      console.error("❌ Chart failed to load:", slide.chartUrl);
+                      e.target.style.display = 'none';
+                    }}
+                  />
                 </div>
               )}
             </div>
@@ -899,17 +1043,23 @@ const EditorPage = () => {
               ))}
             </div>
             
-            {/* ✅ CHART DISPLAY */}
-            {slide.chartUrl && (
+            {hasChart && (
               <div className="mt-8 bg-gray-50 rounded-xl p-6">
-                <img src={slide.chartUrl} alt="Chart" className="w-full h-auto rounded-lg shadow-md" />
+                <img 
+                  src={slide.chartUrl} 
+                  alt="Chart" 
+                  className="w-full h-auto rounded-lg shadow-md max-h-96 object-contain" 
+                  onError={(e) => {
+                    console.error("❌ Chart failed to load:", slide.chartUrl);
+                    e.target.style.display = 'none';
+                  }}
+                />
               </div>
             )}
           </div>
         );
   
       case "centered":
-
         return (
           <div className={`w-full h-full flex flex-col items-center justify-center text-center ${padding} ${theme.text}`} style={{ fontFamily }}>
             <h2 className={`${size} font-bold mb-6 max-w-4xl leading-tight`}>{slide.title}</h2>
@@ -919,10 +1069,17 @@ const EditorPage = () => {
               ))}
             </div>
             
-            {/* ✅ CHART DISPLAY */}
-            {slide.chartUrl && (
+            {hasChart && (
               <div className="mt-8 w-full max-w-4xl bg-white rounded-xl p-6 shadow-lg">
-                <img src={slide.chartUrl} alt="Chart" className="w-full h-auto rounded-lg" />
+                <img 
+                  src={slide.chartUrl} 
+                  alt="Chart" 
+                  className="w-full h-auto rounded-lg max-h-96 object-contain" 
+                  onError={(e) => {
+                    console.error("❌ Chart failed to load:", slide.chartUrl);
+                    e.target.style.display = 'none';
+                  }}
+                />
               </div>
             )}
           </div>
@@ -952,10 +1109,17 @@ const EditorPage = () => {
               })}
             </div>
             
-            {/* ✅ CHART DISPLAY - Full width at bottom */}
-            {slide.chartUrl && (
+            {hasChart && (
               <div className="mt-6 bg-white rounded-xl p-6 shadow-lg">
-                <img src={slide.chartUrl} alt="Statistics Chart" className="w-full h-auto rounded-lg" />
+                <img 
+                  src={slide.chartUrl} 
+                  alt="Statistics Chart" 
+                  className="w-full h-auto rounded-lg max-h-80 object-contain" 
+                  onError={(e) => {
+                    console.error("❌ Chart failed to load:", slide.chartUrl);
+                    e.target.style.display = 'none';
+                  }}
+                />
               </div>
             )}
           </div>
@@ -986,29 +1150,49 @@ const EditorPage = () => {
               </div>
             </div>
             
-            {/* ✅ CHART DISPLAY - Full width at bottom */}
-            {slide.chartUrl && (
+            {hasChart && (
               <div className="mt-6 bg-white rounded-xl p-6 shadow-lg">
-                <img src={slide.chartUrl} alt="Comparison Chart" className="w-full h-auto rounded-lg" />
+                <img 
+                  src={slide.chartUrl} 
+                  alt="Comparison Chart" 
+                  className="w-full h-auto rounded-lg max-h-80 object-contain" 
+                  onError={(e) => {
+                    console.error("❌ Chart failed to load:", slide.chartUrl);
+                    e.target.style.display = 'none';
+                  }}
+                />
               </div>
             )}
           </div>
         );
   
-      default: // split layout - MOST IMPORTANT FIX
+      default: // split layout
         return (
           <div className="w-full h-full flex flex-col" style={{ fontFamily }}>
-            {/* Top Section: Image + Content Side by Side */}
+            {/* Top Section: Image + Content OR Just Content */}
             <div className="flex flex-1">
-              {/* Image Section */}
-              {slide.imageUrl && (
-                <div className="flex-1 relative">
-                  <img src={slide.imageUrl} alt={slide.title} className="w-full h-full object-cover" />
+              {/* ✅ Image Section - ONLY if NO CHART AND valid imageUrl */}
+              {!hasChart && hasValidImage && (
+              <div className="flex-1 relative">
+                {isPresent ? (
+                <img 
+                src={slide.imageUrl}
+                alt={slide.title}
+                className="w-full h-full object-cover" 
+                onError={(e) => {
+                  console.error("❌ Image failed to load:", slide.imageUrl);
+                  e.target.style.display = 'none';
+                }}
+                />
+                ) : (
+                <ImageWithOptions src={slide.imageUrl} alt={slide.title} />
+                )}
                 </div>
-              )}
+                )}
+          
               
-              {/* Content Section */}
-              <div className={`flex-1 flex flex-col justify-center ${padding}`}>
+              {/* Content Section - Full width if chart exists or no image */}
+              <div className={`${hasChart || !hasValidImage ? 'w-full' : 'flex-1'} flex flex-col justify-center ${padding}`}>
                 <h2 
                   className={`${size} font-bold mb-6 leading-tight`} 
                   style={{ textAlign: slide.textAlign }}
@@ -1027,12 +1211,16 @@ const EditorPage = () => {
             </div>
             
             {/* ✅ CHART DISPLAY - Full width at bottom */}
-            {slide.chartUrl && (
-              <div className="w-full bg-white border-t border-gray-200 p-6">
+            {hasChart && (
+              <div className="w-full bg-white border-t-2 border-gray-200 p-6 flex items-center justify-center">
                 <img 
                   src={slide.chartUrl} 
                   alt="Chart" 
-                  className="w-full h-auto max-h-80 object-contain rounded-lg shadow-md mx-auto" 
+                  className="w-full h-auto max-h-80 object-contain rounded-lg shadow-md" 
+                  onError={(e) => {
+                    console.error("❌ Chart failed to load:", slide.chartUrl);
+                    e.target.style.display = 'none';
+                  }}
                 />
               </div>
             )}
@@ -1040,7 +1228,6 @@ const EditorPage = () => {
         );
     }
   };
-
   // Image with hover options component
   const ImageWithOptions = ({ src, alt }) => {
     const [isHovered, setIsHovered] = useState(false);
@@ -1058,9 +1245,12 @@ const EditorPage = () => {
         <img src={src} alt={alt} className="w-full h-full object-cover" />
         
         {isHovered && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/95 backdrop-blur-sm px-3 py-2 rounded-full shadow-lg z-10 animate-in fade-in duration-200">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white/95 backdrop-blur-sm px-3 py-2 rounded-full shadow-lg z-50 animate-in fade-in duration-200">
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
               className="p-2 hover:bg-gray-100 rounded-full transition"
               title="Upload image"
             >
@@ -1068,7 +1258,11 @@ const EditorPage = () => {
             </button>
             
             <button
-              onClick={handleChangeImage}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleChangeImage();
+              }}
+
               className="p-2 hover:bg-gray-100 rounded-full transition"
               title="Refresh image"
             >
@@ -1098,15 +1292,22 @@ const EditorPage = () => {
   
             <div className="relative">
               <button
-                onClick={() => setShowAIMenu(!showAIMenu)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowAIMenu(!showAIMenu);
+                }}
                 className="p-2 hover:bg-gray-100 rounded-full transition"
                 title="Ask AI"
               >
                 <Sparkles size={16} className="text-purple-600" />
               </button>
+
   
               {showAIMenu && (
-                <div className="absolute top-12 right-0 bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-2 w-56">
+                <div 
+                className="absolute top-12 right-0 bg-white border border-gray-200 rounded-lg shadow-xl z-[100] p-2 w-56"
+                onClick={(e) => e.stopPropagation()}
+                >
                   <button
                     onClick={() => {
                       handleEnhance();
@@ -1262,8 +1463,8 @@ const EditorPage = () => {
       {/* HEADER */}
       <header className="flex items-center justify-between px-4 py-2 bg-white border-b border-gray-200 h-[56px] shadow-sm">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-md flex items-center justify-center font-bold text-white text-sm">
-            G
+          <div className="w-8 h-8 bg-gradient-to-br from-gray-500 to-gray-600 rounded-md flex items-center justify-center font-bold text-white text-sm">
+            P
           </div>
           <ChevronDown size={14} className="text-gray-400" />
           <input
@@ -1701,7 +1902,10 @@ style={{
               </div>
           
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full text-left"
               >
                 🖼️ Image
@@ -1759,34 +1963,329 @@ style={{
             setSelectedSlideIndex(index);
           }}
           className={`w-full max-w-5xl rounded-xl shadow-lg overflow-hidden 
-            bg-gradient-to-br ${theme.bg}
-            ${selectedSlide?.id === slide.id ? "ring-4 ring-blue-500 shadow-2xl" : "hover:shadow-xl"} 
-            cursor-pointer transition-all`}
+          bg-gradient-to-br ${theme.bg}
+          ${selectedSlide?.id === slide.id ? "ring-4 ring-blue-500 shadow-2xl" : "hover:shadow-xl"} 
+          cursor-pointer transition-all group relative`}
           style={{
-            height: `${finalHeight}px`, // ✅ DYNAMIC HEIGHT
+            height: `${finalHeight}px`, //  DYNAMIC HEIGHT
           }}
         >
+          {/* Top-left slide controls - visible on hover for ALL slides */}
+          <div className="absolute top-4 left-4 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="flex items-center gap-1 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg px-2 py-2">
+              {/* Button 1: Drag to move / Click to open menu */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Menu functionality will be added
+                }}
+                className="p-2 hover:bg-gray-100 rounded transition cursor-move"
+                title="Drag to move / Click to open menu"
+              >
+                <MoreVertical size={18} className="text-gray-700" />
+              </button>
+              
+              {/* Button 2: Card styling */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCardStyling(showCardStyling === slide.id ? null : slide.id);
+                }}
+                className="p-2 hover:bg-gray-100 rounded transition"
+                title="Card styling"
+              >
+                <Palette size={18} className="text-gray-700" />
+              </button>
+              
+              {/* Button 3: Edit with AI */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // AI edit functionality will be added
+                }}
+                className="p-2 hover:bg-gray-100 rounded transition"
+                title="Edit with AI"
+              >
+                <Sparkles size={18} className="text-gray-700" />
+              </button>
+            </div>
+
+            {/* Card Styling Panel */}
+            {showCardStyling === slide.id && (
+              <div 
+                className="absolute top-full left-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl p-4 w-80 z-[100]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">Card styling</h3>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCardStyling(null);
+                    }}
+                    className="p-1 hover:bg-gray-100 rounded"
+                  >
+                    <X size={16} className="text-gray-500" />
+                  </button>
+                </div>
+
+                {/* Accent Image */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      <ImageIcon size={16} /> Accent image
+                    </label>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                        className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const updatedSlides = slides.map((s) =>
+                            s.id === slide.id ? { ...s, imageUrl: "" } : s
+                          );
+                          setSlides(updatedSlides);
+                          if (selectedSlide?.id === slide.id) {
+                            setSelectedSlide({ ...slide, imageUrl: "" });
+                          }
+                        }}
+                        className="p-1 text-gray-500 hover:bg-gray-100 rounded"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  {slide.imageUrl && (
+                    <img src={slide.imageUrl} alt="Accent" className="w-full h-20 object-cover rounded border" />
+                  )}
+                </div>
+
+                {/* Card Color */}
+                <div className="mb-4">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
+                    <Palette size={16} /> Card color
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 flex-1">
+                      Default
+                    </button>
+                    <button className="p-2 border border-gray-300 rounded hover:bg-gray-50">
+                      <ChevronDown size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Full-bleed card */}
+                <div className="mb-4 flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <Maximize2 size={16} /> Full-bleed card
+                  </label>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const newLayout = slide.layout === "full-image" ? "split" : "full-image";
+                      const updatedSlides = slides.map((s) =>
+                        s.id === slide.id ? { ...s, layout: newLayout } : s
+                      );
+                      setSlides(updatedSlides);
+                      if (selectedSlide?.id === slide.id) {
+                        setSelectedSlide({ ...slide, layout: newLayout });
+                      }
+                    }}
+                    className={`w-12 h-6 rounded-full transition ${
+                      slide.layout === "full-image" ? "bg-blue-600" : "bg-gray-300"
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 bg-white rounded-full shadow transition transform ${
+                        slide.layout === "full-image" ? "translate-x-6" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Content Alignment */}
+                <div className="mb-4">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
+                    <AlignCenter size={16} /> Content alignment
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const updatedSlides = slides.map((s) =>
+                          s.id === slide.id ? { ...s, textAlign: "left" } : s
+                        );
+                        setSlides(updatedSlides);
+                        if (selectedSlide?.id === slide.id) {
+                          setSelectedSlide({ ...slide, textAlign: "left" });
+                        }
+                      }}
+                      className={`p-2 rounded ${slide.textAlign === "left" ? "bg-blue-100 text-blue-600" : "hover:bg-gray-100"}`}
+                      title="Align top"
+                    >
+                      <AlignLeft size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const updatedSlides = slides.map((s) =>
+                          s.id === slide.id ? { ...s, textAlign: "center" } : s
+                        );
+                        setSlides(updatedSlides);
+                        if (selectedSlide?.id === slide.id) {
+                          setSelectedSlide({ ...slide, textAlign: "center" });
+                        }
+                      }}
+                      className={`p-2 rounded ${slide.textAlign === "center" ? "bg-blue-100 text-blue-600" : "hover:bg-gray-100"}`}
+                      title="Align center"
+                    >
+                      <Plus size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const updatedSlides = slides.map((s) =>
+                          s.id === slide.id ? { ...s, textAlign: "right" } : s
+                        );
+                        setSlides(updatedSlides);
+                        if (selectedSlide?.id === slide.id) {
+                          setSelectedSlide({ ...slide, textAlign: "right" });
+                        }
+                      }}
+                      className={`p-2 rounded ${slide.textAlign === "right" ? "bg-blue-100 text-blue-600" : "hover:bg-gray-100"}`}
+                      title="Align bottom"
+                    >
+                      <AlignRight size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Card Width */}
+                <div className="mb-4">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
+                    <Layout size={16} /> Card width
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const updatedSlides = slides.map((s) =>
+                          s.id === slide.id ? { ...s, width: "medium" } : s
+                        );
+                        setSlides(updatedSlides);
+                      }}
+                      className={`px-3 py-1.5 text-sm border rounded flex-1 ${
+                        slide.width !== "large" ? "border-blue-500 bg-blue-50 text-blue-600" : "border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      M
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const updatedSlides = slides.map((s) =>
+                          s.id === slide.id ? { ...s, width: "large" } : s
+                        );
+                        setSlides(updatedSlides);
+                      }}
+                      className={`px-3 py-1.5 text-sm border rounded flex-1 ${
+                        slide.width === "large" ? "border-blue-500 bg-blue-50 text-blue-600" : "border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      L
+                    </button>
+                  </div>
+                </div>
+
+                {/* Backdrop */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      <ImageIcon size={16} /> Backdrop
+                    </label>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Add backdrop functionality
+                      }}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reset Styling */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const updatedSlides = slides.map((s) =>
+                      s.id === slide.id 
+                        ? { 
+                            ...s, 
+                            layout: "split", 
+                            textAlign: "left",
+                            width: "medium"
+                          } 
+                        : s
+                    );
+                    setSlides(updatedSlides);
+                    if (selectedSlide?.id === slide.id) {
+                      setSelectedSlide({ ...slide, layout: "split", textAlign: "left", width: "medium" });
+                    }
+                    toast.success("Card styling reset!");
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded border border-gray-300"
+                >
+                  <RefreshCw size={14} /> Reset styling
+                </button>
+              </div>
+            )}
+          </div>
+
           {slide.id === selectedSlide?.id ? (
-            // ✅ EDITABLE VIEW WITH CHART SUPPORT
-            <div className="w-full h-full flex flex-col overflow-hidden" style={{ fontFamily: theme.font }}>
-              {/* Top Section: Image + Content */}
+            // ✅ EDITABLE VIEW WITH CHART SUPPORT - NO IMAGE IF CHART
+            <div className="w-full h-full flex flex-col overflow-hidden relative" style={{ fontFamily: theme.font }}>
+              {/* Top-left slide controls - fixed position, always visible */}
+              
+              {/* Top Section: Image + Content Side by Side */}
               <div className="flex flex-1 overflow-hidden">
-                {/* Image Section */}
-                {slide.layout !== "full-text" && slide.layout !== "centered" && slide.imageUrl && (
-                  <div className={`${slide.layout === "full-image" ? "absolute inset-0" : "flex-1"} relative`}>
-                    <img src={slide.imageUrl} alt={slide.title} className="w-full h-full object-cover" />
+                {/* Image Section - ONLY if NO CHART */}
+                {!slide.chartUrl &&
+                  slide.layout !== "full-text" &&
+                  slide.layout !== "centered" &&
+                  slide.imageUrl && (
+                  <div className={`${
+                    slide.layout === "full-image" ? "absolute inset-0" : "flex-1"
+                  } relative overflow-hidden group`}>
+                    {/* Image controls at bottom - visible on hover */}
+                    <div className="absolute bottom-4 left-4 z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    </div>
+                    
+                    <ImageWithOptions src={slide.imageUrl} alt={slide.title} />
                     {slide.layout === "full-image" && (
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
                     )}
                   </div>
                 )}
                 
-                {/* Content Section */}
+                {/* Content Section - Full width if chart exists */}
                 <div className={`${
-                  slide.layout === "full-image" ? "absolute inset-0 flex flex-col justify-end" :
-                  slide.layout === "full-text" || slide.layout === "centered" ? "w-full" : 
+                  slide.chartUrl ? "w-full" :
+                  slide.layout === "full-image"
+                    ? "absolute inset-0 flex flex-col justify-end" :
+                  slide.layout === "full-text" || slide.layout === "centered"
+                    ? "w-full" :
                   "flex-1"
-                } flex flex-col justify-center px-12 py-10 overflow-y-auto`}>
+                  } flex flex-col justify-center px-12 py-10 overflow-y-auto`}>
                   <input
                     value={slide.title}
                     onChange={(e) => updateSlideContent("title", e.target.value)}
@@ -1797,12 +2296,12 @@ style={{
                     placeholder="Slide title..."
                   />
                   <textarea
-                    value={slide.content}
+                    value={slide.content}  
                     onChange={(e) => updateSlideContent("content", e.target.value)}
                     className={`text-lg leading-relaxed bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-400 rounded px-2 py-1 resize-none scrollbar-thin ${
                       slide.layout === "full-image" ? "text-white/90" : "text-gray-600"
                     }`}
-                    style={{ 
+                    style={{
                       textAlign: slide.textAlign,
                       minHeight: "150px",
                       maxHeight: "300px"
@@ -1811,14 +2310,14 @@ style={{
                   />
                 </div>
               </div>
-
-              {/* ✅ CHART DISPLAY SECTION */}
+              
+              {/* ✅ CHART DISPLAY SECTION - FIXED POSITION */}
               {slide.chartUrl && (
-                <div className="w-full bg-white/95 border-t-2 border-gray-200 p-4 flex items-center justify-center">
-                  <img 
-                    src={slide.chartUrl} 
-                    alt="Chart" 
-                    className="w-full h-auto max-h-48 object-contain rounded-lg shadow-md" 
+                <div className="w-full bg-white/95 border-t-2 border-gray-200 p-4 flex items-center justify-center flex-shrink-0">
+                  <img
+                    src={slide.chartUrl}
+                    alt="Chart"
+                    className="w-full h-auto max-h-64 object-contain rounded-lg shadow-md"
                   />
                 </div>
               )}
