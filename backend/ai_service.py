@@ -3,7 +3,7 @@ import json
 import httpx
 import re
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from dotenv import load_dotenv
 from theme_manager import theme_manager
 from interactive_features import interactive_manager
@@ -12,6 +12,7 @@ import io, base64
 from datetime import datetime
 import urllib.parse
 import random
+import traceback
 
 load_dotenv()
 
@@ -1523,7 +1524,6 @@ Extract key insights, organize logically, add charts where data supports claims.
 
         except Exception as e:
             print(f"❌ summarize_document error: {e}")
-            import traceback
             traceback.print_exc()
 
             if outline_only:
