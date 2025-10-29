@@ -150,31 +150,79 @@ const ExportModal = ({ isOpen, onClose, presentation }) => {
             </div>
 
             {/* Hidden slide previews for export */}
-            <div className="hidden">
+            <div style={{ position: 'fixed', left: '-9999px', top: 0 }}>
               {presentation.slides.map((slide, index) => (
-                <div
-                  key={slide.id}
-                  ref={(el) => (slideRefs.current[index] = el)}
-                  className="w-full h-96"
-                  style={{
-                    backgroundColor: slide.backgroundColor,
-                    color: slide.textColor,
-                  }}
-                >
-                  <div className="p-8 h-full flex flex-col justify-center">
-                    <h1 className="text-3xl font-bold mb-4">{slide.title}</h1>
-                    <div className="text-lg whitespace-pre-line">{slide.content}</div>
-                    {slide.imageUrl && (
-                      <img
-                        src={slide.imageUrl}
-                        alt={slide.title}
-                        className="mt-4 max-w-md max-h-48 object-contain rounded-lg"
-                      />
-                    )}
+              <div
+                key={slide.id}
+                ref={(el) => (slideRefs.current[index] = el)}
+                style={{
+                  width: '1920px',
+                  height: '1080px',
+                  backgroundColor: slide.backgroundColor || '#ffffff',
+                  color: slide.textColor || '#1f2937',
+                  position: 'relative',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Slide Content */}
+                <div style={{ padding: '80px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  {/* Title */}
+                  <h1 style={{ 
+                    fontSize: '72px', 
+                    fontWeight: 'bold', 
+                    marginBottom: '40px',
+                    color: slide.textColor || '#1f2937',
+                    textAlign: slide.textAlign || 'left'
+                  }}>
+                    {slide.title}
+                  </h1>
+                  
+                  {/* Content */}
+                  <div style={{ 
+                    fontSize: '36px', 
+                    lineHeight: '1.6',
+                    whiteSpace: 'pre-wrap',
+                    color: slide.textColor || '#1f2937',
+                    textAlign: slide.textAlign || 'left'
+                  }}>
+                    {slide.content}
                   </div>
+                  
+                  {/* Image - Only if no chart */}
+                  {slide.imageUrl && !slide.chartUrl && (
+                    <img
+                      src={slide.imageUrl}
+                      alt={slide.title}
+                      style={{
+                        marginTop: '40px',
+                        maxWidth: '800px',
+                        maxHeight: '400px',
+                        objectFit: 'contain',
+                        borderRadius: '12px'
+                      }}
+                      crossOrigin="anonymous"
+                    />
+                  )}
+                  
+                  {/* Chart - Takes priority over image */}
+                  {slide.chartUrl && (
+                    <img
+                      src={slide.chartUrl}
+                      alt="Chart"
+                      style={{
+                        marginTop: '40px',
+                        maxWidth: '1200px',
+                        maxHeight: '600px',
+                        objectFit: 'contain',
+                        borderRadius: '12px'
+                      }}
+                      crossOrigin="anonymous"
+                    />
+                  )}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
 
             {/* Export Button */}
             <div className="flex justify-end space-x-3">

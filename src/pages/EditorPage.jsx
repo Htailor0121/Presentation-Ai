@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import presentationAPI from "../services/api";
 import ThemeSelector, { themes as gradientThemes } from "../components/ThemeSelector";
+import ExportModal from '../components/ExportModal';
 import {
   MoreVertical,
   Palette,
@@ -47,7 +48,7 @@ const EditorPage = () => {
   const outline = location.state?.outline || [];
   const presentationId = location.state?.id;
   const fileInputRef = useRef(null);
-
+  const [showExportModal, setShowExportModal] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [slides, setSlides] = useState([]);
   const [selectedSlide, setSelectedSlide] = useState(null);
@@ -544,7 +545,6 @@ const EditorPage = () => {
     try {
       const result = await presentationAPI.expandSlide(selectedSlide.content);
       const expanded = result.expanded || selectedSlide.content;
-
       const updatedSlides = slides.map((s) =>
         s.id === selectedSlide.id ? { ...s, content: expanded } : s
       );
@@ -1430,9 +1430,8 @@ const EditorPage = () => {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-50 text-gray-700 transition text-sm"
             >
               <Share2 size={14} /> Share
-            </button>
-
-            {showShareMenu && (
+              </button>
+              {showShareMenu && (
               <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 w-48 overflow-hidden">
                 <button
                   onClick={() => {
@@ -1443,14 +1442,16 @@ const EditorPage = () => {
                 >
                   <Share2 size={14} /> Share Link
                 </button>
+                
+               {/* ✅ NEW: Export Modal Trigger */}
                 <button
                   onClick={() => {
-                    handleExport();
+                    setShowExportModal(true);
                     setShowShareMenu(false);
                   }}
                   className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
                 >
-                  <Download size={14} /> Export JSON
+                  <Download size={14} /> Export
                 </button>
               </div>
             )}
@@ -2227,7 +2228,6 @@ style={{
                   />
                 </div>
               </div>
-              
               {/*  CHART DISPLAY SECTION - FIXED POSITION */}
               {slide.chartUrl && (
                 <div className="w-full bg-white/95 border-t-2 border-gray-200 p-4 flex items-center justify-center flex-shrink-0">
@@ -2250,7 +2250,7 @@ style={{
 </div>
 
 {/* Hidden file input */}
-<input
+<inputs
   ref={fileInputRef}
   type="file"
   accept="image/*"
@@ -2381,6 +2381,16 @@ style={{
 )}
 </main>
       </div>
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        presentation={{
+          title: slides[0]?.title || "Untitled Presentation",
+          description: "AI-generated presentation",
+          slides: slides,
+          theme: currentTheme
+        }}
+      />
     </div>
   );
 };

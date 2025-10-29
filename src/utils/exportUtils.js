@@ -21,33 +21,67 @@ async function toBase64(url) {
 }
 
 export const exportToPDF = async (presentation, slides) => {
-  await document.fonts?.ready?.catch(() => {})
-  const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
-  const pageW = pdf.internal.pageSize.getWidth()
-  const pageH = pdf.internal.pageSize.getHeight()
+  try {
+    // Wait for fonts to load
+    await document.fonts.ready.catch(() => {});
+    
+    const pdf = new jsPDF({ 
+      orientation: 'landscape', 
+      unit: 'px', 
+      format: [1920, 1080] 
+    });
 
-  for (let i = 0; i < slides.length; i++) {
-    try {
-      if (i > 0) pdf.addPage()
-      const slide = slides[i]
+    for (let i = 0; i < slides.length; i++) {
+      const slide = slides[i];
+      
+      if (!slide) {
+        console.warn(`Slide ${i} is null/undefined, skipping`);
+        continue;
+      }
 
-      const canvas = await html2canvas(slide, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: presentation.slides?.[i]?.backgroundColor || '#ffffff',
-      })
+      console.log(`📸 Capturing slide ${i + 1}/${slides.length}`);
 
-      const imgData = canvas.toDataURL('image/png')
-      const w = pageW
-      const h = (canvas.height / canvas.width) * w
-      const y = Math.max(0, (pageH - h) / 2)
-      pdf.addImage(imgData, 'PNG', 0, y, w, h)
-    } catch (err) {
-      console.error(`PDF export failed for slide ${i + 1}`, err)
+      try {
+        if (i > 0) pdf.addPage();
+
+        // Capture the slide with html2canvas
+        const canvas = await html2canvas(slide, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: presentation.slides?.[i]?.backgroundColor || '#ffffff',
+          logging: false,
+          width: 1920,
+          height: 1080,
+          windowWidth: 1920,
+          windowHeight: 1080
+        });
+
+        // Convert to image
+        const imgData = canvas.toDataURL('image/png', 1.0);
+        
+        // Add to PDF
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH, undefined, 'FAST');
+        
+        console.log(`✅ Slide ${i + 1} added to PDF`);
+        
+      } catch (err) {
+        console.error(`❌ Failed to capture slide ${i + 1}:`, err);
+      }
     }
-  }
 
-  pdf.save(`${presentation.title || 'presentation'}.pdf`)
+    const fileName = `${presentation.title || 'presentation'}.pdf`;
+    pdf.save(fileName);
+    console.log(`✅ PDF saved: ${fileName}`);
+    
+    return true;
+  } catch (error) {
+    console.error('❌ PDF export error:', error);
+    throw error;
+  }
 }
 
 export const exportToPowerPoint = async (presentation) => {
