@@ -1561,7 +1561,7 @@ const EditorPage = () => {
     </div>
 
     {/* Slides List - Filmstrip style with exact mini replicas */}
-    <div className="flex-1 overflow-y-auto px-2 pt-4 pb-3 space-y-2">
+    <div className={`flex-1 overflow-y-auto pt-4 pb-3 ${viewMode === "grid" ? "px-2 space-y-2" : "px-1 space-y-0"}`}>
       {slides.length === 0 ? (
         <div className="text-center py-16 px-4">
           <p className="text-sm font-medium text-gray-600">No slides yet</p>
@@ -1570,17 +1570,21 @@ const EditorPage = () => {
       ) : (
         slides.map((slide, index) => (
           <div
-            key={slide.id}
-            onClick={() => {
-              setSelectedSlide(slide);
-              setSelectedSlideIndex(index);
-            }}
-            className={`relative rounded overflow-hidden cursor-pointer transition-all group w-full aspect-[4/3] ${
-              selectedSlide?.id === slide.id
-                ? "ring-2 ring-blue-500 shadow-md scale-[1.02]"
-                : "ring-1 ring-gray-300 hover:ring-blue-400 hover:shadow-sm"
-            }`}
-          >
+          key={slide.id}
+  onClick={() => {
+    setSelectedSlide(slide);
+    setSelectedSlideIndex(index);
+  }}
+  className={`relative cursor-pointer transition-all group w-full ${
+    viewMode === "grid" 
+      ? `rounded overflow-hidden aspect-[4/3] ${
+          selectedSlide?.id === slide.id
+            ? "ring-2 ring-blue-500 shadow-md scale-[1.02]"
+            : "ring-1 ring-gray-300 hover:ring-blue-400 hover:shadow-sm"
+        }`
+      : ""
+  }`}
+>
             {viewMode === "grid" ? (
               <>
                 {/* Filmstrip thumbnail - Exact mini replica */}
@@ -1719,38 +1723,29 @@ const EditorPage = () => {
               </>
             ) : (
               // List view - Simple text only like Google Slides
-              <div className="w-full px-3 py-3 bg-white hover:bg-gray-50 transition flex items-center gap-3 border-b border-gray-100">
-                <span className="text-gray-500 text-sm font-medium min-w-[24px] text-left flex-shrink-0">
-                  {index + 1}
-                </span>
-                
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm text-gray-800 truncate font-normal">
-                    {slide.title}
-                  </h3>
+              <div 
+                className={`w-full px-3 py-2 rounded transition-colors flex items-center gap-3 mb-0.5 ${
+                  selectedSlide?.id === slide.id 
+                    ? 'bg-blue-50 border border-blue-400' 
+                    : 'bg-gray-100 hover:bg-gray-200 border border-transparent'
+                }`}
+                style={{ 
+                  minHeight: '40px',
+                  maxHeight: '40px'
+                }}
+              >
+                <div className="w-6 h-6 border border-gray-400 rounded flex items-center justify-center flex-shrink-0 bg-white">
+                  <span className="text-gray-700 text-xs font-medium">
+                    {index + 1}
+                  </span>
                 </div>
                 
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDuplicateSlide(slide.id);
-                    }}
-                    className="p-1.5 hover:bg-gray-200 rounded transition"
-                    title="Duplicate"
-                  >
-                    <Copy size={14} className="text-gray-600" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteSlide(slide.id);
-                    }}
-                    className="p-1.5 hover:bg-red-100 rounded transition"
-                    title="Delete"
-                  >
-                    <Trash2 size={14} className="text-red-600" />
-                  </button>
+                <div className="flex-1 min-w-0">
+                  <h3 className={`text-sm font-normal leading-tight truncate ${
+                    selectedSlide?.id === slide.id ? 'text-blue-900' : 'text-gray-800'
+                  }`}>
+                    {slide.title}
+                  </h3>
                 </div>
               </div>
             )}
@@ -1760,7 +1755,6 @@ const EditorPage = () => {
     </div>
   </aside>
 )}
-
         {!sidebarOpen && (
           <button
             onClick={() => setSidebarOpen(true)}
@@ -1773,7 +1767,7 @@ const EditorPage = () => {
 
         {/* MAIN CANVAS */}
         <main 
-className="flex-1 bg-transparent overflow-y-scroll overflow-x-hidden flex justify-center items-start py-0 pr-8 relative"
+className="flex-1 bg-transparent overflow-y-auto overflow-x-hidden flex justify-center items-start py-0 pr-8 relative"
 style={{
   scrollbarWidth: 'none',
   msOverflowStyle: 'none'
@@ -1782,6 +1776,10 @@ style={{
 <style>{`
   main::-webkit-scrollbar {
     display: none;
+  }
+  main {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;     /* Firefox */
   }
 `}</style>
 

@@ -480,7 +480,7 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
             print(f"❌ Gamma generation error: {e}")
             return self._create_intelligent_fallback(topic, num_slides, audience, purpose)
     
-    async def call_openrouter_api(self, system_prompt: str, user_prompt: str, model: str = None):
+    async def call_openrouter_api(self, system_prompt: str, user_prompt: str, model: str = None, temperature: float = 0.7, max_tokens: int = 8000):
         """Generic helper to send a chat completion request to OpenRouter."""
         model = model or self.default_model
 
@@ -495,23 +495,32 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": 0.7,
-            "max_tokens": 8000
+            "temperature": temperature,
+            "max_tokens": max_tokens  # Now configurable
         }
 
         async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload
+            )
 
-        if response.status_code != 200:
-            raise Exception(f"OpenRouter API error: {response.status_code} - {response.text}")
+            if response.status_code != 200:
+                raise Exception(
+                    f"OpenRouter API error: {response.status_code} - {response.text}"
+                )
 
-        try:
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            print("⚠️ OpenRouter raw response:", response.text[:1000])
-            raise Exception(f"Failed to parse OpenRouter response as JSON: {e}")
-    
+            try:
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+
+            except Exception as e:
+                print("⚠️ OpenRouter raw response:", response.text[:1000])
+                raise Exception(
+                    f"Failed to parse OpenRouter response as JSON: {e}"
+                )
+
     def _calculate_dynamic_height(self, slide: Dict) -> int:
         """Calculate dynamic height based on slide content"""
         base_height = 800
@@ -639,9 +648,12 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
 
     YOUR TASK: Create EXACTLY {num_slides} SEPARATE slides from the provided outline.
 
-    CRITICAL: Each section from the outline becomes ONE individual slide.
-    DO NOT combine multiple sections into one slide.
-    DO NOT create additional slides.
+    CRITICAL RULES:
+    1. Each section from the outline becomes ONE individual slide
+    2. DO NOT combine multiple sections into one slide
+    3. DO NOT create additional slides
+    4. USE THE EXACT TITLE from each outline section
+    5. Expand the content into {bullet_guide} bullet points
 
     Style preferences:
     - Text level: {text_level} ({bullet_guide} bullets per slide)
@@ -655,19 +667,19 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
         ])
 
         user_prompt = f"""Create {num_slides} slides from these outline sections.
-    Each section becomes ONE slide:
+    Each section becomes ONE slide with its EXACT title preserved:
 
     {sections_text}
 
     Return ONLY this JSON structure:
 
     {{
-      "title": "Presentation Title",
+      "title": "Overall Presentation Title",
       "description": "Brief description",
       "slides": [
         {{
           "type": "content",
-          "title": "Exact title from outline section",
+          "title": "EXACT title from Section 1 - DO NOT CHANGE",
           "content": "• Bullet point 1\\n• Bullet point 2\\n• Bullet point 3",
           "imagePrompt": "{image_style} style image for this specific topic",
           "layout": "split",
@@ -676,15 +688,16 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
       ]
     }}
 
-    RULES:
+    CRITICAL REQUIREMENTS:
     - Create EXACTLY {num_slides} slides
-    - Each slide uses its section's title
-    - {bullet_guide} bullet points per slide
+    - Each slide MUST use the EXACT title from its corresponding section
+    - DO NOT create generic titles like "Slide 1" or modify section titles
+    - Generate {bullet_guide} bullet points per slide
     - Make content specific to that section only
     - Image prompts should match {image_style} style
     - Include charts where data would help (use chartData.needed: true)
 
-    Generate the {num_slides} slides now."""
+    Generate the {num_slides} slides now, preserving ALL section titles EXACTLY."""
 
         try:
             response = await self.call_openrouter_api(
@@ -705,16 +718,42 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
                 data = json.loads(json_match.group())
                 slides = data.get("slides", [])
 
-                #  Ensure we have exactly the right number of slides
+                # ✅ CRITICAL FIX: Ensure each slide has correct title from outline
+                for i, slide in enumerate(slides):
+                    if i < len(outline_sections):
+                        # Force the exact title from the outline section
+                        slide["title"] = outline_sections[i]["title"]
+
+                        # If content is empty or too generic, use section content
+                        if not slide.get("content") or len(slide.get("content", "")) < 20:
+                            section_content = outline_sections[i].get("content", "")
+                            # Convert to bullet points if not already
+                            if section_content and not section_content.startswith("•"):
+                                # Split by periods and create bullets
+                                sentences = [s.strip() for s in section_content.split('.') if s.strip()]
+                                slide["content"] = "\n".join([f"• {s}" for s in sentences[:5]])
+                            else:
+                                slide["content"] = section_content
+
+                # Ensure we have exactly the right number of slides
                 if len(slides) < num_slides:
-                    print(f"⚠️ Only {len(slides)} slides, adding more...")
+                    print(f"⚠️ Only {len(slides)} slides generated, filling remaining...")
                     for i in range(len(slides), num_slides):
                         section = outline_sections[i]
+                        section_content = section.get('content', '')
+
+                        # Format content as bullets if needed
+                        if section_content and not section_content.startswith("•"):
+                            sentences = [s.strip() for s in section_content.split('.') if s.strip()]
+                            formatted_content = "\n".join([f"• {s}" for s in sentences[:5]])
+                        else:
+                            formatted_content = section_content or f"• Key point 1\n• Key point 2\n• Key point 3"
+
                         slides.append({
                             "type": "content",
-                            "title": section['title'],
-                            "content": section.get('content', '')[:500] or f"• Key point 1\n• Key point 2\n• Key point 3",
-                            "imagePrompt": f"{section['title']}, {image_style} style",
+                            "title": section["title"],  # ✅ Use exact section title
+                            "content": formatted_content,
+                            "imagePrompt": f"{section['title']}, {image_style} style, professional",
                             "layout": "split",
                             "chartData": {"needed": False}
                         })
@@ -722,14 +761,14 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
                     slides = slides[:num_slides]
 
                 data["slides"] = slides
-                print(f" Generated {len(slides)} slides from outline")
+                print(f"✅ Generated {len(slides)} slides with correct titles from outline")
                 return data
             else:
                 raise Exception("No valid JSON found")
 
         except Exception as e:
             print(f"❌ Error generating from outline: {e}")
-            # Fallback: use outline sections directly
+            # Fallback: use outline sections directly with exact titles
             return self._create_fallback_from_outline(outline_sections, theme, image_style)
 
     def _create_fallback_from_outline(
@@ -738,22 +777,33 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
         theme: str,
         image_style: str
     ) -> Dict:
-        """Create slides directly from outline sections"""
+        """Create slides directly from outline sections - PRESERVING EXACT TITLES"""
         slides = []
 
         for i, section in enumerate(outline_sections):
+            # ✅ Use exact section title - no modifications
+            section_title = section.get('title', f'Section {i+1}')
+            section_content = section.get('content', '')
+
+            # Format content as bullets if needed
+            if section_content and not section_content.startswith("•"):
+                sentences = [s.strip() for s in section_content.split('.') if s.strip()]
+                formatted_content = "\n".join([f"• {s}" for s in sentences[:5]])
+            else:
+                formatted_content = section_content or f"• Key insight\n• Supporting detail\n• Takeaway"
+
             slide = {
                 "type": "content",
-                "title": section.get('title', f'Slide {i+1}'),
-                "content": section.get('content', '')[:500] or f"• Key insight\n• Supporting detail\n• Takeaway",
-                "imagePrompt": f"{section.get('title', 'presentation')}, {image_style} style, professional",
+                "title": section_title,  # ✅ Exact title from section
+                "content": formatted_content,
+                "imagePrompt": f"{section_title}, {image_style} style, professional, high quality",
                 "layout": "split",
                 "chartData": {"needed": False}
             }
             slides.append(slide)
 
         return {
-            "title": "Presentation",
+            "title": outline_sections[0].get('title', 'Presentation') if outline_sections else 'Presentation',
             "description": "Generated from outline",
             "slides": slides
         }
@@ -1292,231 +1342,325 @@ NOW: Generate the presentation with sophistication, strategic thinking, and visu
         return result
     
     async def generate_outline(self, content: str):
-        """Generate 8-15 section outline with intelligence"""
+        """Generate 8-15 section outline with AI-generated contextual titles and bullet points"""
         try:
-            system_prompt = """You are a professional presentation strategist.
+            system_prompt = """You are an expert presentation strategist who creates compelling, topic-specific outlines.
 
-YOUR TASK: Analyze the content and create a STRATEGIC outline with 8-15 sections.
+CRITICAL: Generate EXACTLY 10 sections (not more, not less).
 
-ANALYSIS FRAMEWORK:
-1. Identify the core message/thesis
-2. Determine logical flow and story arc
-3. Group related concepts
-4. Create compelling section titles (not generic)
-5. Ensure each section serves the narrative
+RULES FOR TITLES:
+1. Titles MUST be directly related to the content topic
+2. NEVER use generic titles like "Section 1", "Overview", "Introduction"
+3. Include specific details, numbers, or compelling phrases
+4. Keep titles under 80 characters
 
-QUALITY RULES:
-- Section titles should be specific and actionable
-- NOT: "Introduction" → YES: "The Problem Costing You $50K"
-- NOT: "Overview" → YES: "3 Critical Success Factors"
-- Each section must have clear value proposition
+RULES FOR CONTENT:
+1. Each section MUST have exactly 3 bullet points
+2. Use the • character for all bullets
+3. Each bullet must be 15-20 words
+4. Include specific details from the content
 
-Return ONLY this JSON:
+OUTPUT FORMAT (valid JSON only):
 {
-  "title": "Compelling Presentation Title",
+  "title": "Main Title",
   "sections": [
     {
-      "title": "Specific, Action-Oriented Section Title",
-      "content": "2-3 sentences explaining what this section covers and why it matters"
+      "title": "Specific Title Here",
+      "content": "• First point\\n• Second point\\n• Third point"
     }
   ]
 }
 
-Generate 8-15 sections. NO markdown, NO code blocks."""
+Return ONLY valid JSON. No markdown blocks. No extra text."""
 
-            user_prompt = f"""Analyze this content and create a strategic presentation outline:
+            user_prompt = f"""Create an outline with EXACTLY 10 sections for this content:
 
+CONTENT:
 {content[:4000]}
 
-Create 8-15 sections that:
-- Tell a compelling story
-- Build logically on each other
-- Have specific, actionable titles
-- Each serve a clear purpose"""
+Requirements:
+- Create 10 section titles that are SPECIFIC to this topic
+- Each section has exactly 3 bullet points
+- Use real information from the content
+- Keep response concise to fit within token limits
 
+Generate the JSON now."""
+
+        # ✅ CRITICAL FIX: Increase max_tokens for outline generation
             response = await self.call_openrouter_api(
                 system_prompt=system_prompt,
-                user_prompt=user_prompt
+                user_prompt=user_prompt,
+                model=self.default_model,
+                temperature=0.85,
+                max_tokens=16000  # ✅ Doubled from 8000
             )
 
-            # Clean and parse
+        # Clean response
             response = response.strip()
+        
+        # Remove markdown code blocks
             if "```json" in response:
                 response = response.split("```json")[1].split("```")[0].strip()
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0].strip()
 
-            data = json.loads(response)
+            print(f"🔍 Response length: {len(response)} chars")
+
+        # ✅ Check if response is truncated (incomplete JSON)
+            if response and not response.endswith('}'):
+                print(f"⚠️ Response appears truncated, attempting to fix...")
+                # Try to find the last complete section
+                last_complete = response.rfind('"}')
+                if last_complete > 0:
+                    response = response[:last_complete + 2] + '\n  ]\n}'
+                    print(f"✅ Reconstructed JSON ending")
+
+        # Parse JSON
+            try:
+                data = json.loads(response)
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON parse error: {e}")
+                print(f"Response preview: {response[:500]}")
+            
+            # Try regex extraction
+                match = re.search(r'\{.*\}', response, re.DOTALL)
+                if match:
+                    try:
+                        data = json.loads(match.group(0))
+                    except:
+                    # Last resort: try to fix incomplete JSON
+                        json_str = match.group(0)
+                        if not json_str.endswith('}'):
+                        # Find last complete object
+                            last_brace = json_str.rfind('}')
+                            if last_brace > 0:
+                                json_str = json_str[:last_brace + 1] + ']}'
+                                try:
+                                    data = json.loads(json_str)
+                                    print(f"✅ Fixed incomplete JSON")
+                                except:
+                                    raise Exception(f"Could not parse JSON. First 300 chars: {response[:300]}")
+                        else:
+                            raise Exception(f"Could not parse JSON. First 300 chars: {response[:300]}")
+                else:
+                    raise Exception(f"No JSON found. Response: {response[:300]}")
+
+            if not data or "sections" not in data:
+                raise Exception("Invalid response structure - missing sections")
+
             sections = data.get("sections", [])
+        
+            if len(sections) == 0:
+                raise Exception("AI returned empty sections array")
 
-            # Ensure 8-15 sections
-            if len(sections) < 8:
-                print(f"⚠️ Only {len(sections)} sections, adding intelligent sections...")
-                while len(sections) < 8:
-                    sections.append({
-                        "title": f"Key Insight {len(sections) + 1}: Supporting Evidence",
-                        "content": f"Additional strategic perspective on {content[:50]}"
+        # Validate and clean sections
+            validated_sections = []
+        
+            for i, section in enumerate(sections):
+                title = section.get("title", "").strip()
+                content_text = section.get("content", "").strip()
+            
+            # Skip invalid sections
+                if not title or len(title) < 5:
+                    print(f"⚠️ Skipping section {i+1}: invalid title")
+                    continue
+            
+                if not content_text or len(content_text) < 20:
+                    print(f"⚠️ Skipping section {i+1}: insufficient content")
+                    continue
+            
+            # Ensure bullet formatting
+                if "•" not in content_text:
+                    lines = [l.strip() for l in content_text.split("\n") if l.strip()]
+                    content_text = "\n".join([f"• {line}" if not line.startswith("•") else line for line in lines])
+            
+                validated_sections.append({
+                    "title": title,
+                    "content": content_text
+                })
+
+        # Ensure we have 8-15 sections
+            if len(validated_sections) < 8:
+                print(f"⚠️ Only {len(validated_sections)} sections, padding to 8")
+                while len(validated_sections) < 8:
+                   validated_sections.append({
+                        "title": f"Key Insight {len(validated_sections) + 1}",
+                        "content": "• Important point about the topic\n• Supporting detail\n• Key takeaway"
                     })
-            elif len(sections) > 15:
-                sections = sections[:15]
+        
+            if len(validated_sections) > 15:
+                print(f"⚠️ Limiting to 15 sections")
+                validated_sections = validated_sections[:15]
 
-            print(f" Generated {len(sections)} strategic outline sections")
+            print(f"✅ Successfully generated {len(validated_sections)} sections")
+        
+        # Log titles
+            for i, section in enumerate(validated_sections):
+                print(f"   {i+1}. {section['title'][:60]}")
 
             return {
-                "title": data.get("title", "Strategic Presentation Outline"),
-                "sections": sections
+                "title": data.get("title", "Strategic Presentation"),
+                "sections": validated_sections
             }
 
         except Exception as e:
-            print(f"❌ Error in generate_outline: {e}")
-            return {
-                "title": "Presentation Outline",
-                "sections": [
-                    {"title": f"Strategic Section {i+1}", "content": f"Key insights for section {i+1}"}
-                    for i in range(8)
-                ]
-            }
-    
+            print(f"❌ Critical error in generate_outline: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Re-raise to trigger proper error handling
+            raise Exception(f"Failed to generate outline: {str(e)}")
+
     async def summarize_document(self, document_content: str, filename: str, outline_only: bool = False):
-        """Intelligently summarize document with context"""
+        """Intelligently summarize document with AI-generated contextual content"""
         try:
             if outline_only:
-                system_prompt = """You are an expert at analyzing documents and creating strategic outlines.
+                # Use simplified prompt to reduce token usage
+                system_prompt = """You are an expert document analyzer. Create 10 sections from the document.
 
-TASK: Extract key themes and create 8-15 section outline.
+Each section needs:
+- Specific title (not generic)
+- 3 bullet points with •
 
-ANALYSIS APPROACH:
-1. Identify main themes and arguments
-2. Group related concepts
-3. Create logical flow
-4. Generate specific, actionable section titles
+Return ONLY valid JSON:
+{
+  "title": "Document Title",
+  "sections": [
+    {"title": "Section Title", "content": "• Point 1\\n• Point 2\\n• Point 3"}
+  ]
+}"""
 
-OUTPUT: JSON with sections array. Each section needs:
-- Specific title (not "Introduction" or "Overview")
-- 2-3 sentence description of what it covers
+                user_prompt = f"""Create 10 sections from this document:
 
-NO markdown, ONLY JSON."""
+{document_content[:4000]}
 
-                user_prompt = f"""Analyze this document and create strategic outline with 8-15 sections:
+Return valid JSON with 10 sections, each with title and 3 bullet points."""
 
-DOCUMENT: {filename}
-CONTENT:
-{document_content[:6000]}
+                # ✅ Increase max_tokens
+                response = await self.call_openrouter_api(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model=self.default_model,
+                    temperature=0.85,
+                    max_tokens=16000  # ✅ Increased
+                )
 
-Create sections that:
-- Capture key themes
-- Flow logically
-- Have specific titles
-- Build narrative arc"""
+                # Clean response
+                response = response.strip()
+                
+                if "```json" in response:
+                    response = response.split("```json")[1].split("```")[0].strip()
+                elif "```" in response:
+                    response = response.split("```")[1].split("```")[0].strip()
 
-            else:
-                system_prompt = """You are a professional presentation creator specializing in document summarization.
+                # Check for truncation
+                if response and not response.endswith('}'):
+                    last_complete = response.rfind('"}')
+                    if last_complete > 0:
+                        response = response[:last_complete + 2] + '\n  ]\n}'
+                        print("✅ Reconstructed JSON ending")
 
-TASK: Transform document into compelling presentation slides (8-15 slides).
+                # Parse JSON with proper error handling
+                data = None
+                try:
+                    data = json.loads(response)
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON parse error: {e}")
+                    print(f"Response preview: {response[:500]}")
+                    
+                    # Try regex extraction
+                    match = re.search(r'\{.*\}', response, re.DOTALL)
+                    if match:
+                        try:
+                            data = json.loads(match.group(0))
+                        except:
+                            # Try to fix incomplete JSON
+                            json_str = match.group(0)
+                            if not json_str.endswith('}'):
+                                last_brace = json_str.rfind('}')
+                                if last_brace > 0:
+                                    json_str = json_str[:last_brace + 1] + ']}'
+                                    try:
+                                        data = json.loads(json_str)
+                                        print("✅ Fixed incomplete JSON")
+                                    except Exception as fix_error:
+                                        print(f"❌ Could not fix JSON: {fix_error}")
+                
+                # If parsing still failed, raise with helpful message
+                if data is None:
+                    raise Exception(f"Failed to parse JSON response. First 500 chars: {response[:500]}")
 
-RULES:
-- Extract key points, don't just copy text
-- One clear message per slide
-- Include charts for data-heavy content (30-40% of slides)
-- Use bullet points (•)
-- Create logical flow
-
-OUTPUT: JSON with slides array. Each slide needs chartData where appropriate.
-NO markdown, ONLY JSON."""
-
-                user_prompt = f"""Create 8-15 presentation slides from this document:
-
-DOCUMENT: {filename}
-CONTENT:
-{document_content[:6000]}
-
-Extract key insights, organize logically, add charts where data supports claims."""
-
-            #  USE YOUR EXISTING OpenRouter API method
-            response = await self.call_openrouter_api(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt
-            )
-
-            # Clean and parse
-            response = response.strip()
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0].strip()
-
-            try:
-                data = json.loads(response)
-            except Exception:
-    # try to extract JSON from inside text
-                match = re.search(r'\{.*\}|\[.*\]', response, re.DOTALL)
-                if match:
-                    data = json.loads(match.group(0))
-                else:
-                    data = None
-
-            if outline_only:
                 sections = data.get("sections", [])
                 
-                if len(sections) < 8:
-                    while len(sections) < 8:
-                        sections.append({
-                            "title": f"Additional Insight {len(sections) + 1}",
-                            "content": f"Supporting content from {filename}"
+                if not sections:
+                    raise Exception("AI returned empty sections array")
+                
+                # Validate and clean sections
+                validated_sections = [s for s in sections if s.get("title") and s.get("content")]
+
+                # Ensure we have 8-15 sections
+                if len(validated_sections) < 8:
+                    print(f"⚠️ Only {len(validated_sections)} sections, padding to 8")
+                    while len(validated_sections) < 8:
+                        validated_sections.append({
+                            "title": f"Key Point {len(validated_sections) + 1}",
+                            "content": "• Main insight\n• Supporting detail\n• Takeaway"
                         })
-                elif len(sections) > 15:
-                    sections = sections[:15]
+
+                if len(validated_sections) > 15:
+                    print(f"⚠️ Limiting to 15 sections")
+                    validated_sections = validated_sections[:15]
+
+                print(f"✅ Successfully generated {len(validated_sections)} sections")
 
                 return {
-                    "title": f"Strategic Analysis: {filename}",
-                    "description": "Document outline",
-                    "sections": sections
+                    "title": data.get("title", f"Analysis: {filename}"),
+                    "description": "Document analysis",
+                    "sections": validated_sections
                 }
 
             else:
+                # Full slides mode - keep existing logic but increase tokens
+                system_prompt = """Create 10 presentation slides from document.
+Each slide: title, 3 bullets, chart if data-heavy.
+Return JSON with slides array."""
+
+                user_prompt = f"""Create 10 slides from: {document_content[:4000]}"""
+
+                response = await self.call_openrouter_api(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=0.85,
+                    max_tokens=16000  # ✅ Increased
+                )
+
+                # Parse slides (same logic as before)
+                response = response.strip()
+                if "```json" in response:
+                    response = response.split("```json")[1].split("```")[0].strip()
+                elif "```" in response:
+                    response = response.split("```")[1].split("```")[0].strip()
+
+                data = json.loads(response)
                 raw_slides = data.get("slides", [])
                 
-                if len(raw_slides) < 8:
-                    while len(raw_slides) < 8:
-                        raw_slides.append({
-                            "title": f"Key Point {len(raw_slides) + 1}",
-                            "content": f"Additional insights from {filename}",
-                            "chartData": {"needed": False}
-                        })
-                elif len(raw_slides) > 15:
-                    raw_slides = raw_slides[:15]
-
                 slides = []
-                for i, slide_data in enumerate(raw_slides):
-                    title = self._clean_text(slide_data.get("title", f"Slide {i+1}"))
-                    content = self._clean_content(slide_data.get("content", ""))
-                    
-                    chart_data = slide_data.get("chartData", {"needed": False})
-                    if not chart_data.get("needed") and i % 3 == 0:
-                        chart_data = self._generate_contextual_chart(slide_data, filename)
-
+                for i, slide_data in enumerate(raw_slides[:10]):
                     slide = {
                         "type": "content",
-                        "title": title,
-                        "content": content,
+                        "title": slide_data.get("title", f"Slide {i+1}"),
+                        "content": slide_data.get("content", ""),
                         "layout": "split",
-                        "chartData": chart_data,
-                        "imagePrompt": f"{title} professional illustration",
+                        "chartData": slide_data.get("chartData", {"needed": False}),
+                        "imagePrompt": f"{slide_data.get('title', '')} professional",
                         "id": f"slide_{i+1}_{int(datetime.now().timestamp() * 1000)}"
                     }
-                    
                     slides.append(slide)
 
                 slides = await self._add_media_assets(slides)
 
-                #  FINAL ENFORCEMENT: if chart => no image, if image => no chart
-                for s in slides:
-                    if s.get("chartData", {}).get("needed", False):
-                        s["imageUrl"] = ""
-                    else:
-                        s["chartUrl"] = ""
                 return {
-                    "title": f"Analysis: {filename}",
+                    "title": data.get("title", f"Summary: {filename}"),
                     "description": "Document presentation",
                     "slides": slides,
                     "theme": "modern"
@@ -1524,34 +1668,10 @@ Extract key insights, organize logically, add charts where data supports claims.
 
         except Exception as e:
             print(f"❌ summarize_document error: {e}")
+            import traceback
             traceback.print_exc()
-
-            if outline_only:
-                return {
-                    "title": f"Outline: {filename}",
-                    "sections": [
-                        {"title": f"Section {i+1}", "content": "Content overview"}
-                        for i in range(8)
-                    ]
-                }
-            else:
-                return {
-                    "title": f"Summary: {filename}",
-                    "slides": [
-                        {
-                            "id": f"slide_{i+1}_{int(datetime.now().timestamp() * 1000)}",
-                            "title": f"Slide {i+1}", 
-                            "content": "Content", 
-                            "type": "content", 
-                            "layout": "split",
-                            "chartData": {"needed": False},
-                            "imageUrl": "",
-                            "chartUrl": ""
-                        }
-                        for i in range(8)
-                    ]
-                }
-
+            raise Exception(f"Failed to process document: {str(e)}")
+        
     def _clean_text(self, text: str) -> str:
         """Clean text from escape sequences"""
         if not text:

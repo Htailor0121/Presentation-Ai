@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 import uvicorn
 import os
 import uuid
@@ -28,6 +28,7 @@ from pptx.dml.color import RGBColor
 import tempfile
 import requests
 from PIL import Image
+import urllib.parse
 
 class UrlIngestRequest(BaseModel):
     url: str
@@ -83,6 +84,11 @@ class GeneratePresentationRequest(BaseModel):
     theme: Optional[str] = None
     include_interactive: bool = True
     num_slides: Optional[int] = None  #  Added for control
+    outline_sections: Optional[List[Dict]] = None  # ✅ ADD THIS
+    audience: str = "professionals"
+    purpose: str = "inform"
+    text_level: str = "concise"
+    image_style: str = "professional"
 
 class GenerateSlideRequest(BaseModel):
     prompt: str
@@ -115,14 +121,20 @@ ai_service = PresentaionAi()
 
 #  UPDATED: AI service for generating presentations
 async def generate_presentation_from_prompt(
-    prompt: str, 
-    model: str = None, 
-    theme: str = None, 
+    prompt: str,
+    model: str = None,
+    theme: str = None,
     include_interactive: bool = True,
-    num_slides: int = None
+    num_slides: int = None,
+    outline_sections: List[Dict] = None,  # ✅ ADD THIS
+    text_level: str = "concise",
+    image_style: str = "professional",
+    audience: str = "professionals",
+    purpose: str = "inform"
 ) -> PresentationResponse:
     """
     Generate presentation with 8-15 slides.
+    If outline_sections provided, generates from sections.
     If num_slides is None, AI decides (but always 8-15 range).
     """
     try:
@@ -135,47 +147,51 @@ async def generate_presentation_from_prompt(
         
         print(f"🎯 Generating {num_slides} slides...")
         
-        #  Use AI service with num_slides parameter
+        # ✅ Use AI service with outline sections if provided
         ai_response = await ai_service.generate_presentation(
-            prompt, 
-            model, 
-            theme, 
+            prompt,
+            model,
+            theme,
             include_interactive,
-            num_slides=num_slides
+            num_slides=num_slides,
+            audience=audience,
+            purpose=purpose,
+            outline_sections=outline_sections,  # ✅ Pass to AI service
+            text_level=text_level,
+            image_style=image_style
         )
         
         # Convert to frontend format
         slides = []
-        # NEW CODE - USE THIS 
         for slide_data in ai_response.get("slides", []):
             if "id" not in slide_data or not slide_data["id"]:
                 slide_data["id"] = f"slide_{uuid.uuid4()}"
     
-    #  FIX: Check if slide has a chart
+            # Check if slide has a chart
             has_chart = slide_data.get("chartData", {}).get("needed", False)
             image_url = slide_data.get("imageUrl", "")
     
-    #  Only generate new image if NO chart AND NO existing image
+            # Only generate new image if NO chart AND NO existing image
             if not has_chart and not image_url:
                 image_prompt = slide_data.get("imagePrompt")
                 if not image_prompt:
                     title = slide_data.get("title", "")
                     content = slide_data.get("content", "")
-                    image_prompt = f"{title}. {content[:100]}. Professional, modern, high quality"
+                    image_prompt = f"{title}. {content[:100]}. {image_style}, professional, high quality"
         
                 try:
                     image_url = await ai_service.generate_image(image_prompt)
                     if not image_url:
-                        image_url = "https://source.unsplash.com/1200x800/?presentation,professional"
+                        image_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(image_prompt)}?width=1920&height=1080&nologo=true&enhance=true&seed={uuid.uuid4()}"
                 except Exception:
-                    image_url = "https://source.unsplash.com/1200x800/?presentation,professional"
+                    image_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(title)}?width=1920&height=1080&nologo=true&enhance=true&seed={uuid.uuid4()}"
             elif has_chart:
-        #  Chart slides don't need images
+                # Chart slides don't need images
                 image_url = ""
     
             slide = SlideRequest(
                 type=slide_data.get("type", "content"),
-                title=slide_data.get("title", ""),
+                title=slide_data.get("title", ""),  # ✅ This should now be correct from AI
                 content=slide_data.get("content", ""),
                 backgroundColor=slide_data.get("backgroundColor", "#ffffff"),
                 textColor=slide_data.get("textColor", "#1f2937"),
@@ -186,18 +202,18 @@ async def generate_presentation_from_prompt(
             slides.append(slide)
         
         final_count = len(slides)
-        print(f" Created {final_count} slides successfully")
+        print(f"✅ Created {final_count} slides successfully with unique titles")
         
         return PresentationResponse(
-            title=ai_response.get("title", "Untitled Presentation"),
+            title=ai_response.get("title", prompt[:50] + "..."),
             description=ai_response.get("description", prompt),
             slides=slides,
             theme=ai_response.get("theme", "modern")
         )
         
     except Exception as e:
-        print(f" Error in generate_presentation_from_prompt: {e}")
-        # Fallback with 8 slides minimum
+        print(f"❌ Error in generate_presentation_from_prompt: {e}")
+        # Fallback with correct number of slides
         return create_fallback_presentation(prompt, num_slides or 8)
 def download_image(url: str) -> str:
     """Download image and return local path"""
@@ -307,32 +323,51 @@ async def generate_presentation(request: GeneratePresentationRequest):
     Used when user clicks "Generate Slides" in OutlinePage.
     """
     try:
-        if not request.prompt.strip():
-            raise HTTPException(status_code=400, detail="Prompt is required")
+        if not request.prompt.strip() and not request.outline_sections:
+            raise HTTPException(status_code=400, detail="Prompt or outline is required")
         
-        print(f"🎨 Generating full presentation from prompt...")
+        print(f"🎨 Generating full presentation...")
         
-        #  Pass num_slides parameter
-        presentation = await generate_presentation_from_prompt(
-            request.prompt, 
-            request.model, 
-            request.theme, 
-            request.include_interactive,
-            num_slides=request.num_slides  #  Now properly passed
-        )
+        # ✅ Check if outline sections were provided
+        if request.outline_sections and len(request.outline_sections) > 0:
+            print(f"📋 Using {len(request.outline_sections)} outline sections")
+            
+            # Generate from outline sections
+            presentation = await generate_presentation_from_prompt(
+                request.prompt,
+                request.model,
+                request.theme,
+                request.include_interactive,
+                num_slides=len(request.outline_sections),  # Use outline length
+                outline_sections=request.outline_sections,  # ✅ Pass sections
+                text_level=request.text_level,
+                image_style=request.image_style,
+                audience=request.audience,
+                purpose=request.purpose
+            )
+        else:
+            # Generate from prompt only
+            print(f"💭 Generating from prompt only")
+            presentation = await generate_presentation_from_prompt(
+                request.prompt,
+                request.model,
+                request.theme,
+                request.include_interactive,
+                num_slides=request.num_slides
+            )
         
         slide_count = len(presentation.slides)
         
-        #  Validate slide count
+        # Validate slide count
         if slide_count < 8 or slide_count > 15:
-            print(f" Warning: Generated {slide_count} slides (expected 8-15)")
+            print(f"⚠️ Warning: Generated {slide_count} slides (expected 8-15)")
         
-        print(f" Generated presentation with {slide_count} slides")
+        print(f"✅ Generated presentation with {slide_count} slides")
         
         return presentation
         
     except Exception as e:
-        print(f" Error in generate_presentation: {e}")
+        print(f"❌ Error in generate_presentation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate presentation: {str(e)}")
 
 @app.post("/api/save-presentation")
