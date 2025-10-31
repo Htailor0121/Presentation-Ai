@@ -1922,22 +1922,24 @@ style={{
 
       return (
         <motion.div
-          key={slide.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: index * 0.05 }}
-          onClick={() => {
-            setSelectedSlide(slide);
-            setSelectedSlideIndex(index);
-          }}
-          className={`w-full max-w-5xl rounded-xl shadow-lg overflow-hidden 
-          bg-gradient-to-br ${theme.bg}
-          ${selectedSlide?.id === slide.id ? "ring-4 ring-blue-500 shadow-2xl" : "hover:shadow-xl"} 
-          cursor-pointer transition-all group relative`}
-          style={{
-            height: `${finalHeight}px`, //  DYNAMIC HEIGHT
-          }}
-        >
+        key={slide.id}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: index * 0.05 }}
+        onClick={() => {
+        setSelectedSlide(slide);
+        setSelectedSlideIndex(index);
+        }}
+        className={`w-full max-w-5xl rounded-xl shadow-lg 
+        bg-gradient-to-br ${theme.bg}
+        ${selectedSlide?.id === slide.id ? "ring-4 ring-blue-500 shadow-2xl" : "hover:shadow-xl"} 
+        cursor-pointer transition-all group relative 
+        ${slide.chartUrl ? "overflow-hidden" : "overflow-y-auto scrollbar-hide"}`}
+        style={{
+        height: `${finalHeight}px`, // DYNAMIC HEIGHT
+        }}
+      >
+
           {/* Top-left slide controls - visible on hover for ALL slides */}
           <div className="absolute top-4 left-4 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <div className="flex items-center gap-1 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg px-2 py-2">
@@ -2264,18 +2266,18 @@ style={{
                     placeholder="Slide title..."
                   />
                   <textarea
-                    value={slide.content}  
-                    onChange={(e) => updateSlideContent("content", e.target.value)}
-                    className={`text-lg leading-relaxed bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-400 rounded px-2 py-1 resize-none scrollbar-thin ${
-                      slide.layout === "full-image" ? "text-white/90" : "text-gray-600"
-                    }`}
-                    style={{
-                      textAlign: slide.textAlign,
-                      minHeight: "150px",
-                      maxHeight: "300px"
-                    }}
-                    placeholder="Add your content here..."
-                  />
+                  value={slide.content}
+                  onChange={(e) => updateSlideContent("content", e.target.value)}
+                  className={`text-lg leading-relaxed bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-400 rounded px-2 py-1 resize-none scrollbar-hide ${
+                  slide.layout === "full-image" ? "text-white/90" : "text-gray-600"
+                  }`}
+                  style={{
+                  textAlign: slide.textAlign,
+                  minHeight: "150px",
+                  maxHeight: "300px",
+                  }}
+                  placeholder="Add your content here..."
+                />
                 </div>
               </div>
               {/*  CHART DISPLAY SECTION - FIXED POSITION */}

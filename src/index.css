@@ -34,3 +34,11 @@
     @apply bg-white rounded-lg shadow-lg border border-secondary-200 overflow-hidden;
   }
 }
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;     /* Firefox */
+}
