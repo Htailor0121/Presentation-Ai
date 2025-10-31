@@ -105,33 +105,31 @@ const EditorPage = () => {
               try {
                 slideData = JSON.parse(item);
               } catch (e) {
-                console.warn('Failed to parse slide item as JSON:', e);
+                console.warn('Failed to parse slide item:', e);
                 slideData = { content: item };
               }
             }
             
-            //  DEBUG: Log what we received from backend
-            console.log(`🔍 Slide ${i+1} received from backend:`, {
+            // ✅ CRITICAL FIX: Preserve chartUrl and imageUrl from backend
+            const chartUrl = slideData.chartUrl || "";
+            const imageUrl = slideData.imageUrl || "";
+            const hasChart = Boolean(chartUrl && chartUrl.trim() !== "");
+            
+            console.log(`🔍 Loading slide ${i+1}:`, {
               title: slideData.title,
-              hasChartUrl: !!slideData.chartUrl,
-              chartUrlLength: slideData.chartUrl?.length || 0,
-              chartUrlPreview: slideData.chartUrl?.substring(0, 50) || 'none',
-              hasImageUrl: !!slideData.imageUrl,
-              imageUrlPreview: slideData.imageUrl?.substring(0, 50) || 'none',
-              layout: slideData.layout,
-              type: slideData.type
+              hasChart,
+              hasImage: Boolean(imageUrl),
+              chartUrlPreview: chartUrl.substring(0, 50) || 'none',
+              imageUrlPreview: imageUrl.substring(0, 50) || 'none'
             });
             
-            // Extract content properly
+            // Extract and clean content
             let cleanContent = slideData.content || "Generated AI Slide Content";
-            
-            // If content is still a JSON string, parse it
             if (typeof cleanContent === 'string' && (cleanContent.includes('"type"') || cleanContent.includes('"content"'))) {
               try {
                 const parsed = JSON.parse(cleanContent);
                 cleanContent = parsed.content || cleanContent;
               } catch {
-                // Try regex extraction as fallback
                 const contentMatch = cleanContent.match(/"content"\s*:\s*"([^"]+)"/);
                 if (contentMatch) {
                   cleanContent = contentMatch[1];
@@ -149,7 +147,7 @@ const EditorPage = () => {
                 .trim();
             }
             
-            // Extract title properly
+            // Extract and clean title
             let cleanTitle = slideData.title || `Slide ${i + 1}`;
             if (typeof cleanTitle === 'string') {
               cleanTitle = cleanTitle
@@ -159,39 +157,38 @@ const EditorPage = () => {
                 .trim();
             }
             
-            //  IMPORTANT: Preserve chartUrl and imageUrl from backend
+            // ✅ Build final slide object with preserved URLs
             const finalSlide = {
               id: slideData.id || `slide_${i + 1}_${Date.now()}`,
               title: cleanTitle,
               content: cleanContent,
-              imageUrl: slideData.imageUrl || "",  //  Keep as-is from backend
-              chartUrl: slideData.chartUrl || "",  //  Keep as-is from backend
+              imageUrl: imageUrl,  // ✅ Preserve from backend
+              chartUrl: chartUrl,  // ✅ Preserve from backend
               layout: slideData.layout || "split",
               textAlign: slideData.textAlign || "left",
               type: slideData.type || "content",
               height: slideData.height || 800,
-              chartData: slideData.chartData || { needed: false }  //  Preserve chart metadata
+              chartData: slideData.chartData || { needed: false }
             };
             
-            //  DEBUG: Log final processed slide
-            console.log(` Slide ${i+1} processed:`, {
+            console.log(`✅ Slide ${i+1} loaded:`, {
               title: finalSlide.title,
-              hasChart: !!finalSlide.chartUrl,
-              hasImage: !!finalSlide.imageUrl,
-              layout: finalSlide.layout
+              hasChart: Boolean(finalSlide.chartUrl),
+              hasImage: Boolean(finalSlide.imageUrl)
             });
             
             return finalSlide;
           });
-
-          //  DEBUG: Summary of all slides
-          console.log("📊 SLIDE SUMMARY:", formatted.map((s, idx) => ({
-            slide: idx + 1,
-            title: s.title,
-            hasChart: !!s.chartUrl,
-            hasImage: !!s.imageUrl,
-            layout: s.layout
-          })));
+  
+          // Summary
+          const chartCount = formatted.filter(s => s.chartUrl && s.chartUrl.trim()).length;
+          const imageCount = formatted.filter(s => s.imageUrl && s.imageUrl.trim()).length;
+          
+          console.log("📊 LOADING SUMMARY:", {
+            totalSlides: formatted.length,
+            slidesWithCharts: chartCount,
+            slidesWithImages: imageCount
+          });
           
           setSlides(formatted);
           if (formatted.length > 0) {
@@ -605,9 +602,12 @@ const EditorPage = () => {
 
   // Add Chart
   const handleAddChart = async () => {
-    if (!selectedSlide) return;
+    if (!selectedSlide) {
+      toast.error("Please select a slide first!");
+      return;
+    }
     
-    const loadingToast = toast.loading(" Generating chart...");
+    const loadingToast = toast.loading("📊 Generating chart...");
     
     try {
       // Extract numbers from content
@@ -629,7 +629,7 @@ const EditorPage = () => {
         ];
       }
       
-      //  Generate chart using QuickChart.io API
+      // Generate chart using QuickChart.io API
       const chartConfig = {
         type: 'bar',
         data: {
@@ -644,34 +644,72 @@ const EditorPage = () => {
         },
         options: {
           responsive: true,
+          maintainAspectRatio: false,
           plugins: {
             legend: {
               display: true,
-              position: 'top'
+              position: 'top',
+              labels: {
+                font: {
+                  size: 14,
+                  weight: 'bold'
+                }
+              }
             },
             title: {
               display: true,
-              text: selectedSlide.title || 'Chart Data'
+              text: selectedSlide.title || 'Chart Data',
+              font: {
+                size: 18,
+                weight: 'bold'
+              },
+              padding: {
+                top: 10,
+                bottom: 20
+              }
             }
           },
           scales: {
             y: {
-              beginAtZero: true
+              beginAtZero: true,
+              ticks: {
+                font: {
+                  size: 12
+                }
+              }
+            },
+            x: {
+              ticks: {
+                font: {
+                  size: 12
+                }
+              }
             }
           }
         }
       };
       
       // Create chart URL using QuickChart
-      const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&width=800&height=400&backgroundColor=white`;
+      const chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(
+        JSON.stringify(chartConfig)
+      )}&width=1200&height=600&backgroundColor=white&devicePixelRatio=2`;
       
-      //  Update slide with chartUrl property
+      console.log("📊 Generated chart URL:", chartUrl.substring(0, 100));
+      
+      // Update slide with chartUrl and remove imageUrl
       const updatedSlides = slides.map((s) =>
         s.id === selectedSlide.id 
           ? { 
               ...s, 
-              chartUrl: chartUrl,  // Store chart URL
-              hasChart: true       // Flag to indicate chart exists
+              chartUrl: chartUrl,
+              imageUrl: "",  // Remove image when adding chart
+              hasChart: true,
+              chartData: {
+                needed: true,
+                type: 'bar',
+                labels: chartData.map(d => d.label),
+                values: chartData.map(d => d.value)
+              }
             } 
           : s
       );
@@ -680,16 +718,23 @@ const EditorPage = () => {
       setSelectedSlide({ 
         ...selectedSlide, 
         chartUrl: chartUrl,
+        imageUrl: "",
         hasChart: true 
       });
       
       toast.dismiss(loadingToast);
-      toast.success(" Chart generated successfully!");
+      toast.success("📊 Chart generated successfully!");
+      
+      console.log("✅ Chart added to slide:", {
+        slideTitle: selectedSlide.title,
+        chartUrl: chartUrl.substring(0, 100),
+        dataPoints: chartData.length
+      });
       
     } catch (error) {
-      console.error(error);
+      console.error("❌ Chart generation error:", error);
       toast.dismiss(loadingToast);
-      toast.error(" Failed to generate chart");
+      toast.error("Failed to generate chart. Please try again.");
     }
   };
   
@@ -901,18 +946,26 @@ const EditorPage = () => {
     const padding = isPresent ? "p-16" : "p-10";
     const fontFamily = theme.font;
   
-    //  CHECK: Does this slide have a chart?
-    const hasChart = slide.chartUrl && slide.chartUrl.trim() !== "";
+    // ✅ FIXED: Accept both HTTP URLs AND base64 data URIs
+    const hasChart = Boolean(
+      slide.chartUrl && 
+      typeof slide.chartUrl === 'string' && 
+      slide.chartUrl.trim().length > 0 &&
+      (slide.chartUrl.startsWith('http') || slide.chartUrl.startsWith('data:image'))
+    );
     
-    //  CHECK: Does this slide have a valid image?
-    const hasValidImage = slide.imageUrl && 
-                          slide.imageUrl.trim() !== "" && 
-                          !slide.imageUrl.includes("placeholder");
+    // ✅ FIXED: Show image regardless of chart - they can coexist
+    const hasValidImage = Boolean(
+      slide.imageUrl && 
+      typeof slide.imageUrl === 'string' &&
+      slide.imageUrl.trim().length > 0 && 
+      !slide.imageUrl.includes("placeholder") &&
+      (slide.imageUrl.startsWith('http') || slide.imageUrl.startsWith('data:image'))
+    );
   
-    console.log(`🔍 Slide: ${slide.title}`);
-    console.log(`   hasChart: ${hasChart}`);
-    console.log(`   hasValidImage: ${hasValidImage}`);
-    console.log(`   chartUrl: ${slide.chartUrl}`);
+    console.log(`🔍 Rendering slide: ${slide.title}`);
+    console.log(`   hasChart: ${hasChart} | chartUrl: ${slide.chartUrl?.substring(0, 50) || 'none'}`);
+    console.log(`   hasValidImage: ${hasValidImage} | imageUrl: ${slide.imageUrl?.substring(0, 50) || 'none'}`);
   
     switch (slide.layout) {
       case "full-image":
@@ -2247,7 +2300,7 @@ style={{
 </div>
 
 {/* Hidden file input */}
-<inputs
+<input
   ref={fileInputRef}
   type="file"
   accept="image/*"
